@@ -1,5 +1,24 @@
 {
   "dependencies": {
+    "uuid": "^9.0.1",
+    "wrtc": "^0.4.7",
     "ws": "^8.13.0"
-  }
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "name": "teleport-nodejs",
+  "description": "A minimal Teleport server on node.js",
+  "version": "1.0.0",
+  "main": "server.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/simul/teleport-nodejs.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/simul/teleport-nodejs/issues"
+  },
+  "homepage": "https://github.com/simul/teleport-nodejs#readme"
 }

@@ -1,5 +1,15 @@
 
  
+const WebRtcConnectionManager = require('./connections/webrtcconnectionmanager');
+
+
 signaling=require("./signaling.js");
 
-signaling.init();
+
+options = {
+    sendConfigMessage: signaling.sendConfigMessage
+};
+
+const connectionManager = WebRtcConnectionManager.create(options);
+
+signaling.init(connectionManager);
