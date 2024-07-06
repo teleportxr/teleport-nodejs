@@ -78,12 +78,12 @@ class WebRtcConnection extends Connection
 
         this.doOffer = async () =>
         {
-            const offer = await peerConnection.createOffer();
-            await peerConnection.setLocalDescription(offer);
-            var message = '{{"teleport-signal-type",description.typeString()},{"sdp",'+offer+'}}';
-            sendConfigMessage(message);
             try
-            {
+            { 
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+                var message = '{{"teleport-signal-type",description.typeString()},{"sdp",'+offer+'}}';
+                this.sendConfigMessage(this.id,message);
                 await waitUntilIceGatheringStateComplete(peerConnection, options);
             } catch (error)
             {

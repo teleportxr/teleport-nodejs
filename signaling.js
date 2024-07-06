@@ -1,3 +1,5 @@
+const getcurrentline=require('get-current-line').default;
+
 // Importing the required modules
 const WebSocketServer = require('ws');
 var generateUid = (function () {
@@ -40,8 +42,9 @@ function startStreaming(signalingClient)
 {
     var txt='{"teleport-signal-type":"request-response","content":{"clientID": '+signalingClient.clientID+'}}';
 	signalingClient.ws.send(txt);
-    var c=connectionManager.createConnection();
+    var c=connectionManager.createConnection(signalingClient.clientID);
 }
+
 function processInitialRequest(clientID,signalingClient,content)
 {
 	var j_clientID = BigInt(0);
@@ -49,7 +52,8 @@ function processInitialRequest(clientID,signalingClient,content)
 	{
 		var j_clientID = BigInt(content["clientID"]);
 	}
-	console.log( "Received connection request from " + signalingClient.ip_addr_port + " identifying as client " + j_clientID + " .");
+    var thisline = getcurrentline();
+	console.log("info: Received connection request from " + signalingClient.ip_addr_port + " identifying as client " + j_clientID + " .");
 	if (clientID == 0)
 	{
 		clientID = j_clientID;
@@ -174,5 +178,12 @@ exports.init =function (c)
 }
 exports.sendConfigMessage=function(clientID,msg)
 {
-	signalingClients[clientID].ws.send(msg);
+    if (signalingClients.has(clientID))
+    {
+	    signalingClients[clientID].ws.send(msg);
+    }
+    else
+    {
+        console.log("sendConfigMessage with clientID "+clientID+" not in signalingClients map.");
+    }
 }

@@ -2,7 +2,7 @@
 
 const { v4: uuidv4 } = require('uuid');
 
-const DefaultConnection = require('./connection');
+const DefaultConnection = require('./webrtcconnection');
 
 class ConnectionManager {
   constructor(options = {}) {
@@ -40,10 +40,10 @@ class ConnectionManager {
       connections.delete(connection.id);
     }
 
-    this.createConnection = () => {
+    this.createConnection = (clientID) => {
       const id = createId();
       const connection = new Connection(id,options);
-
+    connection.clientID=clientID;
       // 1. Add the "closed" listener.
       function closedListener() { deleteConnection(connection); }
       closedListeners.set(connection, closedListener);
