@@ -10,6 +10,6 @@ options = {
     sendConfigMessage: signaling.sendConfigMessage
 };
 
-const connectionManager = WebRtcConnectionManager.create(options);
+const webRtcConnectionManager = WebRtcConnectionManager.create(options);
 
-signaling.init(connectionManager);
+signaling.init(webRtcConnectionManager);

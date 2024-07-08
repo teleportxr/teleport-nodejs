@@ -1,82 +1,113 @@
-const getcurrentline=require('get-current-line').default;
+const getcurrentline = require("get-current-line").default;
 
 // Importing the required modules
-const WebSocketServer = require('ws');
+const WebSocketServer = require("ws");
 var generateUid = (function () {
-		var i = BigInt(1);
-		return function () {
-				return i++;
-		}
+	var i = BigInt(1);
+	return function () {
+		return i++;
+	};
 })();
 
 class SignalingState {
-	static START = new SignalingState('Start');
-	static REQUESTED = new SignalingState('Requested');
-	static ACCEPTED = new SignalingState('Accepted');
-	static STREAMING = new SignalingState('Streaming');
-	static INVALID = new SignalingState('Invalid');
-  
+	static START = new SignalingState("Start");
+	static REQUESTED = new SignalingState("Requested");
+	static ACCEPTED = new SignalingState("Accepted");
+	static STREAMING = new SignalingState("Streaming");
+	static INVALID = new SignalingState("Invalid");
+
 	constructor(name) {
-	  this.name = name;
+		this.name = name;
 	}
 	toString() {
-	  return `SignalingState.${this.name}`;
+		return `SignalingState.${this.name}`;
 	}
-  }
-
-class SignalingClient {
-		constructor(ip, ws,id) {
-			this.ip = ip;
-			this.ws = ws;
-			this.messagesToPassOn=[];
-			this.ip_addr_port="";
-			this.signalingState=SignalingState.START;
-			this.clientID = id;
-			this.client = null;
-		}
-	}
-const signalingClients = new Map();
-var desiredIP="";
-var connectionManager=null;
-function startStreaming(signalingClient)
-{
-    var txt='{"teleport-signal-type":"request-response","content":{"clientID": '+signalingClient.clientID+'}}';
-	signalingClient.ws.send(txt);
-    var c=connectionManager.createConnection(signalingClient.clientID);
 }
 
-function processInitialRequest(clientID,signalingClient,content)
-{
+class SignalingClient {
+	constructor(ip, ws, id) {
+		this.ip = ip;
+		this.ws = ws;
+		this.messagesToPassOn = [];
+		this.ip_addr_port = "";
+		this.signalingState = SignalingState.START;
+		this.clientID = id;
+		this.client = null;
+	}
+	ChangeSignalingState(newState) {
+		console.log(
+			"clientID " +
+				this.clientID +
+				" signaling state from " +
+				this.signalingState +
+				" to " +
+				newState
+		);
+		this.signalingState = newState;
+	}
+}
+const signalingClients = new Map();
+var desiredIP = "";
+var webRtcConnectionManager = null;
+function startStreaming(signalingClient) {
+	// then we tell the client manager to start this client.
+	// We make sure WebRTC has a connection for this client.
+	var c = webRtcConnectionManager.createConnection(signalingClient.clientID);
+	signalingClient.ChangeSignalingState(SignalingState.ACCEPTED);
+	// And we send the WebSockets request-response.
+	sendResponseToClient(signalingClient.clientID);
+}
+
+function sendResponseToClient(clientID) {
+	if (!signalingClients.has(clientID)) {
+        console.log("No client "+clientID+" found.");
+	} else {
+        signalingClient=signalingClients[clientID];
+		// First, we send the WebSockets signaling response.
+		var txt =
+			'{"teleport-signal-type":"request-response","content":{"clientID": ' +
+			signalingClient.clientID +
+			'}}';
+		signalingClient.ws.send(txt);
+	}
+}
+function processDisconnection(clientID,signalingClient){
+
+}
+function processInitialRequest(clientID, signalingClient, content) {
 	var j_clientID = BigInt(0);
-	if (content.hasOwnProperty("clientID") )
-	{
+	if (content.hasOwnProperty("clientID")) {
 		var j_clientID = BigInt(content["clientID"]);
 	}
-    var thisline = getcurrentline();
-	console.log("info: Received connection request from " + signalingClient.ip_addr_port + " identifying as client " + j_clientID + " .");
-	if (clientID == 0)
-	{
+	var thisline = getcurrentline();
+	console.log(
+		"info: Received connection request from " +
+			signalingClient.ip_addr_port +
+			" identifying as client " +
+			j_clientID +
+			" ."
+	);
+	if (clientID == 0) {
 		clientID = j_clientID;
-	}
-	else
-	{
-		if (!signalingClients.has(j_clientID))
-		{
+	} else {
+		if (!signalingClients.has(j_clientID)) {
 			// sent us a client ID that isn't valid. Ignore it, don't waste bandwidth..?
 			// or instead, send the replacement ID in the response, leave it up to
 			// client whether they accept the new ID or abandon the connection.
-			j_clientID=clientID;
+			j_clientID = clientID;
 		}
 		// identifies as a previous client. Discard the new client ID.
 		//TODO: we're taking the client's word for it that it is clientID. Some kind of token/hash?
-		signalingClients[clientID] =signalingClient;
-		if (j_clientID != clientID)
-		{
-			console.log("info: Remapped from " + clientID+ " to " + j_clientID );
-			console.log("info: signalingClient has " + signalingClient.clientID );
-			
-			if (signalingClients.has(clientID))
-			{
+		signalingClients[clientID] = signalingClient;
+		if (j_clientID != clientID) {
+			console.log(
+				"info: Remapped from " + clientID + " to " + j_clientID
+			);
+			console.log(
+				"info: signalingClient has " + signalingClient.clientID
+			);
+
+			if (signalingClients.has(clientID)) {
 				signalingClients[clientID] = nullptr;
 				clientUids.erase(clientID);
 			}
@@ -86,75 +117,94 @@ function processInitialRequest(clientID,signalingClient,content)
 	var ipAddr = signalingClient.ip_addr_port;
 	//Skip clients we have already added.
 	if (signalingClient.signalingState == SignalingState.START)
-		signalingClient.signalingState = SignalingState.REQUESTED;
+		signalingClient.ChangeSignalingState(SignalingState.REQUESTED);
 	// if signalingState is START, we should not have a client...
-	if (signalingClient.client!=null)
-	{
+	if (signalingClient.client != null) {
 		// ok, we've received a connection request from a client that WE think we already have.
 		// Apparently the CLIENT thinks they've disconnected.
 		// The client might, as far as we know, have lost the information it needs to continue the connection.
 		// THerefore we should resend everything required.
-		signalingClient.signalingState = SignalingState.STREAMING;
-		console.log( "Warning: Client " + clientID + " reconnected, but we didn't know we'd lost them." );
+		signalingClient.ChangeSignalingState(SignalingState.STREAMING);
+		console.log(
+			"Warning: Client " +
+				clientID +
+				" reconnected, but we didn't know we'd lost them."
+		);
 		// It may be just that the connection request was already in flight when we accepted its predecessor.
 		sendResponseToClient(clientID);
 		return;
 	}
 	if (signalingClient.signalingState != SignalingState.REQUESTED)
-		return;
+        return;
 	//Ignore connections from clients with the wrong IP, if a desired IP has been set.
-	if (desiredIP.length == 0||ipAddr.contains(desiredIP))
-	{
-		signalingClient.signalingState = SignalingState.ACCEPTED;
+	if (desiredIP.length == 0 || ipAddr.contains(desiredIP)) {
 		startStreaming(signalingClient);
 	}
 }
 
-function receiveWebSocketsMessage(clientID,signalingClient,txt)
-{
+function receiveWebSocketsMessage(clientID, signalingClient, txt) {
 	var message = JSON.parse(txt);
 	if (!message.hasOwnProperty("teleport-signal-type"))
-		return;
-	if (message["teleport-signal-type"] == "request")
-		processInitialRequest(clientID, signalingClient,message["content"]);
-	//else
-	//	signalingClients[clientID].messagesToPassOn.push(txt);
+        return;
+    var teleport_signal_type=message["teleport-signal-type"];
+	if (teleport_signal_type == "request")
+    {
+		processInitialRequest(clientID, signalingClient, message["content"]);
+    }
+    else if (teleport_signal_type == "disconnect")
+    {
+        processDisconnection(clientID, signalingClient);
+    }
+    else
+    {
+        var webRtcConnection = webRtcConnectionManager.getConnection(clientID);
+        webRtcConnection.receiveStreamingControlMessage(txt);
+    }
 }
-function OnWebSocket(ws,req)
-{
+function OnWebSocket(ws, req) {
 	var clientID = generateUid();
-	var signalingClient=new SignalingClient(req.socket.remoteAddress,ws,clientID);
+	var signalingClient = new SignalingClient(
+		req.socket.remoteAddress,
+		ws,
+		clientID
+	);
+	signalingClient.ip_addr_port = req.socket.remoteAddress;
 	signalingClients.set(clientID, signalingClient);
-	console.log("new client "+clientID.toString()+" connected from "+signalingClient.ip_addr_port .toString());
+	console.log(
+		"new client " +
+			clientID.toString() +
+			" connected from " +
+			signalingClient.ip_addr_port.toString()
+	);
 	//When the server runs behind a proxy like NGINX, the de-facto standard is to use the X-Forwarded-For header.
 	//const ip = .headers['x-forwarded-for'].split(',')[0].trim();
 
-	const re=RegExp("([0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+)(:[0-9]+)?", 'i');
-	
-	signalingClient.ip_addr_port = req.socket.remoteAddress;
-	var match=signalingClient.ip_addr_port.match(re);
-	if (match)
-	{
-		signalingClient.ip_addr_port =match[0];
+	const re = RegExp("([0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+)(:[0-9]+)?", "i");
+
+	var match = signalingClient.ip_addr_port.match(re);
+	if (match) {
+		signalingClient.ip_addr_port = match[0];
 	}
 
 	//on message from client
 	ws.on("message", (data, isBinary) => {
-		if (!isBinary)
-		{
-			console.log(`Client has sent text: ${data}`)
-			receiveWebSocketsMessage(signalingClient.clientID,signalingClient,data);
-		}
-		else
-		{
-			console.log(`Client has sent binary:`+data.byteLength+" bytes.");
+		if (!isBinary) {
+			console.log(`Client has sent text: ${data}`);
+			receiveWebSocketsMessage(
+				signalingClient.clientID,
+				signalingClient,
+				data
+			);
+		} else {
+			console.log(
+				`Client has sent binary:` + data.byteLength + " bytes."
+			);
 			//console.log(data.toString());
 			receiveBinaryWebSocketsMessage(signalingClient.clientID, data);
 		}
 	});
-	ws.on("error",error=>
-	{
-		console.error("Websocket err " + error );
+	ws.on("error", (error) => {
+		console.error("Websocket err " + error);
 	});
 	// handling what to do when clients disconnects from server
 	ws.on("close", () => {
@@ -162,28 +212,42 @@ function OnWebSocket(ws,req)
 	});
 	// handling client connection error
 	ws.onerror = function () {
-			console.log("Some Error occurred")
-	}
+		console.log("Some Error occurred");
+	};
 }
-exports.init =function (c)
-{
+exports.init = function (webRtcCM) {
 	// Creating a new websocket server
-	const wss = new WebSocketServer.Server({ port: 8081 })
-	connectionManager=c;
+	const wss = new WebSocketServer.Server({ port: 8081 });
+	webRtcConnectionManager = webRtcCM;
 	// Creating connection using websocket
 	wss.on("connection", (ws, req) => {
-		OnWebSocket(ws,req);
+		OnWebSocket(ws, req);
 	});
-	console.log("The WebSocket server is running on port "+wss.options.port);
-}
-exports.sendConfigMessage=function(clientID,msg)
-{
-    if (signalingClients.has(clientID))
+	console.log("The WebSocket server is running on port " + wss.options.port);
+};
+exports.sendConfigMessage = function (clientID, msg) {
+    // Test: is this message valid json?
+    var escapedStr=msg.toString();
+    try{
+        escapedStr=escapedStr.replaceAll('\r','\\r');
+        escapedStr=escapedStr.replaceAll('\n','\\n');
+        var message = JSON.parse(escapedStr);
+    } catch(error)
     {
-	    signalingClients[clientID].ws.send(msg);
+        console.error(error);
+        console.error("Invalid json: "+escapedStr);
+        return;
     }
-    else
-    {
-        console.log("sendConfigMessage with clientID "+clientID+" not in signalingClients map.");
-    }
-}
+
+
+	if (signalingClients.has(clientID)) {
+		console.log("sendConfigMessage to "+clientID+": "+msg);
+		signalingClients[clientID].ws.send(escapedStr);
+	} else {
+		console.log(
+			"sendConfigMessage with clientID " +
+				clientID +
+				" not in signalingClients map."
+		);
+	}
+};
