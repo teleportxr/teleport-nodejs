@@ -8,6 +8,12 @@ const TIME_TO_CONNECTED = 10000;
 const TIME_TO_HOST_CANDIDATES = 3000;  // NOTE: Too long.
 const TIME_TO_RECONNECTED = 10000;
 
+function EVEN_ID(id) {
+    return (id-(id%2))
+}
+function ODD_ID(id) {
+    return (EVEN_ID(id)+1)
+}
 class WebRtcConnection extends EventEmitter
 {
 	constructor(id, options = {})
@@ -32,6 +38,7 @@ class WebRtcConnection extends EventEmitter
 			timeToReconnected
 		} = options;
 
+		this.connectionStateChanged=options.connectionStateChanged;
 		this.sendConfigMessage=options.sendConfigMessage;
 		const peerConnection = new RTCPeerConnection({
 			sdpSemantics: 'unified-plan'
@@ -77,9 +84,65 @@ class WebRtcConnection extends EventEmitter
 				}
 			}
 		};
+		const onIceGatheringStateChange = () =>
+		{
+            console.log("ICE gathering state changed to: "+peerConnection.iceGatheringState);
+        };
 
 		peerConnection.addEventListener('iceconnectionstatechange', onIceConnectionStateChange);
+		peerConnection.addEventListener('icegatheringstatechange', onIceGatheringStateChange);
 
+        
+		const onConnectionStateChange = () =>
+           {
+            console.log("Connection State changed to: "+peerConnection.connectionState.toString());
+            this.connectionStateChanged(this,peerConnection.connectionState);
+        }
+        peerConnection.addEventListener("connectionstatechange", onConnectionStateChange);
+
+        this.onIceCandidate= ({ candidate })=>
+        {
+            if (!candidate)
+            {
+                options.clearTimeout(this.timeout);
+                //peerConnection.removeEventListener('icecandidate', this.onIceCandidate);
+                this.deferred.resolve();
+                return;
+            }
+            // send the candidate
+            var mid=candidate.sdpMid;
+            var mlineindex=candidate.sdpMLineIndex;
+            var message = '{"teleport-signal-type":"candidate","candidate":"'+candidate.candidate+'","mid":"'+mid.toString()+'","mlineindex":'+mlineindex.toString()+'}';
+            this.sendConfigMessage(this.id,message);
+        }
+        this.waitUntilIceGatheringStateComplete= async  (peerConnection, options) =>
+        {
+            if (peerConnection.iceGatheringState === 'complete')
+            {
+                return;
+            }
+        
+            const { timeToHostCandidates } = options;
+        
+            this.deferred = {};
+            this.deferred.promise = new Promise((resolve, reject) =>
+            {
+                this.deferred.resolve = resolve;
+                this.deferred.reject = reject;
+            });
+        
+            this.timeout = options.setTimeout(() =>
+            {
+                peerConnection.removeEventListener('icecandidate', this.onIceCandidate);
+                this.deferred.reject(new Error('Timed out waiting for host candidates'));
+            }, timeToHostCandidates);
+        
+        
+            peerConnection.addEventListener('icecandidate', this.onIceCandidate);
+        
+            await this.deferred.promise;
+        }
+        
 		this.doOffer = async () =>
 		{
 			try
@@ -88,9 +151,10 @@ class WebRtcConnection extends EventEmitter
 				await peerConnection.setLocalDescription(offer);
 				var message = '{"teleport-signal-type":"offer","sdp":"'+offer.sdp+'"}'; //
 				this.sendConfigMessage(this.id,message);
-				await waitUntilIceGatheringStateComplete(peerConnection, options);
+				await this.waitUntilIceGatheringStateComplete(peerConnection, options);
 			} catch (error)
 			{
+                console.error(error.toString());
 				this.close();
 				throw error;
 			}
@@ -98,6 +162,7 @@ class WebRtcConnection extends EventEmitter
 
 		this.applyAnswer = async answer =>
 		{
+            console.log("received remote answer.");
             var escapedStr=answer.toString();
             try{
                 escapedStr=escapedStr.replaceAll('\r','\\r');
@@ -112,6 +177,7 @@ class WebRtcConnection extends EventEmitter
 		};
 		this.applyRemoteCandidate = async(candidate_txt,mid,mlineindex)=>
 		{
+            console.log("received remote candidate.");
             peerConnection.addIceCandidate(new wrtc.RTCIceCandidate({
               candidate: candidate_txt,
               sdpMLineIndex: mlineindex,
@@ -176,15 +242,18 @@ class WebRtcConnection extends EventEmitter
 			}
 		});
 	}
+    sendGeometry(data){
+        this.geometryDataChannel.send('#START XXXXXXXX');
+    }
     beforeOffer(peerConnection) {
-        
-        this.videoDataChannel = this.createDataChannel("video",{id:20});
-        this.tagDataChannel = this.createDataChannel("video_tags",{id:40});
-        this.audioToClientDataChannel = this.createDataChannel("audio_server_to_client",{id:60});
-        this.geometryDataChannel = this.createDataChannel("geometry",{id:80});
-        this.reliableDataChannel = this.createDataChannel("reliable",{id:100});
-        this.unreliableDataChannel = this.createDataChannel("unreliable",{id:120,ordered:false});
-        this.dataChannel = peerConnection.createDataChannel('ping-pong');
+          
+        this.videoDataChannel = this.createDataChannel("video");
+        this.tagDataChannel = this.createDataChannel("video_tags");
+        this.audioToClientDataChannel = this.createDataChannel("audio_server_to_client");
+        this.geometryDataChannel = this.createDataChannel("geometry");
+        this.reliableDataChannel = this.createDataChannel("reliable");
+        this.unreliableDataChannel = this.createDataChannel("unreliable",false);
+       // this.dataChannel = peerConnection.createDataChannel('ping-pong',{id:2050});
       
         function onMessage({ data }) {
           if (data === 'ping') {
@@ -196,25 +265,42 @@ class WebRtcConnection extends EventEmitter
         // RTCPeerConnection is closed. In the future, we can subscribe to
         // "connectionstatechange" events.
         const { close } = peerConnection;
+        var self=this;
         peerConnection.close = function() {
-          dataChannel.removeEventListener('message', onMessage);
+            //self.dataChannel.removeEventListener('message', onMessage);
           return close.apply(this, arguments);
         };
       }
-    createDataChannel(label,dict)
+      
+    createDataChannel(label,reliable=true)
     {
-        var dc=this.pc.createDataChannel(label,dict);
-        dc.onmessage = (event) => {
+        //See https://web.dev/articles/webrtc-datachannels. Can only use id if negotiated=true.
+        const dataChannelOptions={ordered:reliable,maxRetransmits:reliable?10000:0};
+        
+        var dc=this.pc.createDataChannel(label,dataChannelOptions);
+       
+         dc.onmessage = (event) => {
             console.log('datachannel '+label+' received: '+event.data+'.');
         };
   
-          dc.onopen = () => {
+          dc.onopen = (event) => {
             console.log('datachannel '+label+' open');
+           //dc.send('XXXX');
         };
   
-        dc.onclose = () => {
+        dc.onclose = (event) => {
             console.log('datachannel '+label+' close');
         };
+  
+        dc.onclosing = (event) => {
+            console.log('datachannel '+label+' onclosing');
+        };
+  
+  
+        dc.onbufferedamountlow = (event) => {
+            console.log('datachannel '+label+' onbufferedamountlow;');
+        };
+  
   
        // dc.addEventListener('message', onMessage);
         return dc;
@@ -247,12 +333,11 @@ class WebRtcConnection extends EventEmitter
     }
     receiveCandidate(candidate,mid,mlineindex)
     {
-        
-    peerConn.addIceCandidate(new RTCIceCandidate({
-        candidate: message.candidate,
-        sdpMLineIndex: message.label,
-        sdpMid: message.id
-      }));
+        peerConn.addIceCandidate(new RTCIceCandidate({
+            candidate: message.candidate,
+            sdpMLineIndex: message.label,
+            sdpMid: message.id
+        }));
     }
     
 }
@@ -269,43 +354,6 @@ function descriptionToJSON (description, shouldDisableTrickleIce)
 function disableTrickleIce (sdp)
 {
 	return sdp.replace(/\r\na=ice-options:trickle/g, '');
-}
-
-async function waitUntilIceGatheringStateComplete (peerConnection, options)
-{
-	if (peerConnection.iceGatheringState === 'complete')
-	{
-		return;
-	}
-
-	const { timeToHostCandidates } = options;
-
-	const deferred = {};
-	deferred.promise = new Promise((resolve, reject) =>
-	{
-		deferred.resolve = resolve;
-		deferred.reject = reject;
-	});
-
-	const timeout = options.setTimeout(() =>
-	{
-		peerConnection.removeEventListener('icecandidate', onIceCandidate);
-		deferred.reject(new Error('Timed out waiting for host candidates'));
-	}, timeToHostCandidates);
-
-	function onIceCandidate ({ candidate })
-	{
-		if (!candidate)
-		{
-			options.clearTimeout(timeout);
-			peerConnection.removeEventListener('icecandidate', onIceCandidate);
-			deferred.resolve();
-		}
-	}
-
-	peerConnection.addEventListener('icecandidate', onIceCandidate);
-
-	await deferred.promise;
 }
 
 module.exports = WebRtcConnection;

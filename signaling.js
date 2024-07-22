@@ -1,13 +1,9 @@
+'use strict';
 const getcurrentline = require("get-current-line").default;
 
 // Importing the required modules
 const WebSocketServer = require("ws");
-var generateUid = (function () {
-	var i = BigInt(1);
-	return function () {
-		return i++;
-	};
-})();
+const core=require("./protocol/core.js");
 
 class SignalingState {
 	static START = new SignalingState("Start");
@@ -24,7 +20,7 @@ class SignalingState {
 	}
 }
 
-class SignalingClient {
+class SignalingClient { 
 	constructor(ip, ws, id) {
 		this.ip = ip;
 		this.ws = ws;
@@ -32,7 +28,7 @@ class SignalingClient {
 		this.ip_addr_port = "";
 		this.signalingState = SignalingState.START;
 		this.clientID = id;
-		this.client = null;
+		this.receiveReliableBinaryMessage=null;
 	}
 	ChangeSignalingState(newState) {
 		console.log(
@@ -45,24 +41,26 @@ class SignalingClient {
 		);
 		this.signalingState = newState;
 	}
+    sendToClient(data) {
+        this.ws.send(data);
+    }
 }
-const signalingClients = new Map();
+var signalingClients = new Map();
 var desiredIP = "";
 var webRtcConnectionManager = null;
+var newClient=null;
 function startStreaming(signalingClient) {
-	// then we tell the client manager to start this client.
-	// We make sure WebRTC has a connection for this client.
-	var c = webRtcConnectionManager.createConnection(signalingClient.clientID);
-	signalingClient.ChangeSignalingState(SignalingState.ACCEPTED);
+    signalingClient.ChangeSignalingState(SignalingState.ACCEPTED);
 	// And we send the WebSockets request-response.
 	sendResponseToClient(signalingClient.clientID);
+	newClient(signalingClient.clientID,signalingClient);
 }
 
 function sendResponseToClient(clientID) {
 	if (!signalingClients.has(clientID)) {
         console.log("No client "+clientID+" found.");
 	} else {
-        signalingClient=signalingClients[clientID];
+        var signalingClient=signalingClients[clientID];
 		// First, we send the WebSockets signaling response.
 		var txt =
 			'{"teleport-signal-type":"request-response","content":{"clientID": ' +
@@ -108,14 +106,14 @@ function processInitialRequest(clientID, signalingClient, content) {
 			);
 
 			if (signalingClients.has(clientID)) {
-				signalingClients[clientID] = nullptr;
+				signalingClients[clientID] = null;
 				clientUids.erase(clientID);
 			}
 			clientID = j_clientID;
 		}
 	}
 	var ipAddr = signalingClient.ip_addr_port;
-	//Skip clients we have already added.
+	// Skip clients we have already added.
 	if (signalingClient.signalingState == SignalingState.START)
 		signalingClient.ChangeSignalingState(SignalingState.REQUESTED);
 	// if signalingState is START, we should not have a client...
@@ -123,7 +121,7 @@ function processInitialRequest(clientID, signalingClient, content) {
 		// ok, we've received a connection request from a client that WE think we already have.
 		// Apparently the CLIENT thinks they've disconnected.
 		// The client might, as far as we know, have lost the information it needs to continue the connection.
-		// THerefore we should resend everything required.
+		// Therefore we should resend everything required.
 		signalingClient.ChangeSignalingState(SignalingState.STREAMING);
 		console.log(
 			"Warning: Client " +
@@ -162,7 +160,7 @@ function receiveWebSocketsMessage(clientID, signalingClient, txt) {
     }
 }
 function OnWebSocket(ws, req) {
-	var clientID = generateUid();
+	var clientID = core.generateUid();
 	var signalingClient = new SignalingClient(
 		req.socket.remoteAddress,
 		ws,
@@ -200,7 +198,7 @@ function OnWebSocket(ws, req) {
 				`Client has sent binary:` + data.byteLength + " bytes."
 			);
 			//console.log(data.toString());
-			receiveBinaryWebSocketsMessage(signalingClient.clientID, data);
+			signalingClient.receiveReliableBinaryMessage(data);
 		}
 	});
 	ws.on("error", (error) => {
@@ -215,10 +213,11 @@ function OnWebSocket(ws, req) {
 		console.log("Some Error occurred");
 	};
 }
-exports.init = function (webRtcCM) {
+exports.init = function (webRtcCM,newClientFn) {
 	// Creating a new websocket server
 	const wss = new WebSocketServer.Server({ port: 8081 });
 	webRtcConnectionManager = webRtcCM;
+	newClient=newClientFn;
 	// Creating connection using websocket
 	wss.on("connection", (ws, req) => {
 		OnWebSocket(ws, req);
@@ -251,3 +250,5 @@ exports.sendConfigMessage = function (clientID, msg) {
 		);
 	}
 };
+
+exports.signalingClients = signalingClients;

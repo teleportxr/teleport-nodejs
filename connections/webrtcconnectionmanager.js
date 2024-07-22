@@ -23,9 +23,11 @@ class WebRtcConnectionManager
 			// 2. Remove the Connection from the Map.
 			connections.delete(connection.id);
 		}
-        this.createConnection = async (clientID) =>
+        
+        this.createConnection = async (clientID,connectionStateChangedcb) =>
         {
             const connection = new Connection(clientID,options);
+            connection.connectionStateChanged=connectionStateChangedcb;
             // 1. Add the "closed" listener.
             function closedListener() { deleteConnection(connection); }
             closedListeners.set(connection, closedListener);
