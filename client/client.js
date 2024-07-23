@@ -34,7 +34,6 @@ class Client {
     {
         // We make sure WebRTC has a connection for this client.
        this.webRtcConnection = webRtcConnectionManager.createConnection(this.clientID,this.streamingConnectionStateChanged);
-
     }
     receiveHandshake(data)
     {
