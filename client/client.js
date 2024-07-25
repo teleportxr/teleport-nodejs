@@ -60,6 +60,7 @@ class Client {
         }
         var acknowledgeHandshakeCommand=new command.AcknowledgeHandshakeCommand;
         this.SendCommand(acknowledgeHandshakeCommand);
+		// And now, setup is complete. On the next geometry update, we can send nodes/resources.
     }
     receiveReliableBinaryMessage(data){
         const messageType=data[0];

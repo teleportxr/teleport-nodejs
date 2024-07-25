@@ -1,5 +1,5 @@
 'use strict';
-
+var microtime = require('microtime')	// timings in microseconds.
 const UID_SIZE=8;
 // Get type information by "typename". Everything not listed is assumed to be a struct
 // (i.e. a js class with its own encodeIntoDataView function.)
@@ -98,6 +98,7 @@ function encodeIntoDataView(obj,dataView,byteOffset){
 	console.log("Total size: "+byteOffset+"\n");
 	return byteOffset;
 }
+
 function decodeFromDataView(obj,dataView,byteOffset){
 	for (let [key,sub_obj] of Object.entries(obj)) {
 		let first_underscore=key.search('_');
@@ -311,6 +312,7 @@ function decodeFromUint8Array(object,array){
 	console.log("\n");
 	return byteOffset;
 }
+
 var generateUid = (function () {
 	var i = BigInt(1);
 	return function () {
@@ -318,7 +320,23 @@ var generateUid = (function () {
 	};
 })();
 
+var startTimeUnixUs=0;
+
+function getStartTimeUnixUs(){
+	if(startTimeUnixUs==0)
+		startTimeUnixUs=microtime.now();
+	return startTimeUnixUs;
+}
+
+function getTimestamp(){
+	//var t_unix_ms=Date.now();
+	//var t_perf_us=performance.now();
+	const t_unix_us=microtime.now();
+	const t_us=t_unix_us-startTimeUnixMs;
+	return t_us;
+}
+
 module.exports= {UID_SIZE,SizeOfType,encodeIntoDataView,decodeFromDataView
 	,vec4,BackgroundMode,AxesStandard,DisplayInfo,RenderingFeatures,LightingMode,VideoCodec
 	,VideoConfig,ClientDynamicLighting,encodeToUint8Array,decodeFromUint8Array
-	,generateUid};
+	,generateUid,getStartTimeUnixUs,getTimestamp};

@@ -1,4 +1,5 @@
 'use strict';
+const core=require("../protocol/core.js");
 const client=require("./client.js");
 const signaling=require("../signaling.js");
 
@@ -9,9 +10,26 @@ class ClientManager
     {
 		this.clients= new Map();
 		this.addNewClientAndReturnOriginUid=null;
-		var c=new client.Client(13513,null);
+		this.geometryIntervalId=0;
+		console.log("Start Unix Time us: "+core.getStartTimeUnixUs()+"\n");
+		//console.log("From Date: "+Date.now()*1000+"\n");
     }
 	
+	StartStreaming(){
+		this.geometryIntervalId = setInterval(function() {
+			console.log("Streaming Update at "+core.getTimestamp()/1000000.0);
+			UpdateStreaming();
+		  }, 5000);
+	}
+	StopStreaming(){
+		if(this.geometryIntervalId!=0)
+			clearInterval(this.geometryIntervalId);
+	}
+	UpdateStreaming(){
+		for (let [cl_id,cl] of this.clients) {
+			cl.UpdateStreaming();
+		}
+	}
     GetOrCreateClient(clientID)
     {
         if(!this.clients.has(clientID))
@@ -25,12 +43,21 @@ class ClientManager
 			var sigSend=sigCli.sendToClient.bind(sigCli);
 			var c=new client.Client(clientID,sigSend);
 			c.origin_uid=origin_uid;
+			if(this.clients.size==0)
+				this.StartStreaming();
             this.clients.set(clientID,c);
 			return c;
         }
         var c=this.clients.get(clientID);
         return c;
     }
+	RemoveClient(clientID){
+        if(this.clients.has(clientID)) {
+			this.clients.delete(clientID);
+			if(this.clients.size==0)
+				this.StartStreaming();
+		}
+	}
     GetClient(clientID)
     {
         if(!this.clients.has(clientID))
