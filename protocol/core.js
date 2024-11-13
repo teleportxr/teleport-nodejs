@@ -314,9 +314,9 @@ function decodeFromUint8Array(object,array){
 }
 
 var generateUid = (function () {
-	var i = BigInt(1);
+	var i = 1;
 	return function () {
-		return BigInt(i++);
+		return i++;
 	};
 })();
 
@@ -332,7 +332,7 @@ function getTimestamp(){
 	//var t_unix_ms=Date.now();
 	//var t_perf_us=performance.now();
 	const t_unix_us=microtime.now();
-	const t_us=t_unix_us-startTimeUnixMs;
+	const t_us=t_unix_us-getStartTimeUnixUs();
 	return t_us;
 }
 

@@ -73,9 +73,9 @@ function processDisconnection(clientID,signalingClient){
 
 }
 function processInitialRequest(clientID, signalingClient, content) {
-	var j_clientID = BigInt(0);
+	var j_clientID = 0;
 	if (content.hasOwnProperty("clientID")) {
-		var j_clientID = BigInt(content["clientID"]);
+		var j_clientID = content["clientID"];
 	}
 	var thisline = getcurrentline();
 	console.log(
@@ -222,7 +222,7 @@ exports.init = function (webRtcCM,newClientFn) {
 	wss.on("connection", (ws, req) => {
 		OnWebSocket(ws, req);
 	});
-	console.log("The WebSocket server is running on port " + wss.options.port);
+	console.log("The WebSockets Signaling Server is running on port " + wss.options.port);
 };
 exports.sendConfigMessage = function (clientID, msg) {
     // Test: is this message valid json?

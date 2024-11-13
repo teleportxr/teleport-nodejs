@@ -3,20 +3,29 @@
 const core= require("../protocol/core");
 const command= require("../protocol/command.js");
 const message= require("../protocol/message.js");
+const gs= require("./geometry_service.js");
+const WebRtcConnectionManager = require('../connections/webrtcconnectionmanager');
 
 class Client {
     constructor(cid,sigSend) {
 		this.signalingSend=sigSend;
         this.clientID=cid;
-        this.origin_uid=BigInt.asUintN(64,BigInt(0));
+        this.origin_uid=0;
         this.handshakeMessage=new message.HandshakeMessage();
+		this.geometryService=new gs.GeometryService();
     }
+	tick(timestamp){
+		this.geometryService.GetNodesToStream();
+	}
     webRtcConnection=null;
     streamingConnectionStateChanged(wrtcConn,newState)
     {
         this.webRtcConnection=wrtcConn;
         console.warn("Connection state is "+newState.toString());
-       //this.webRtcConnection.sendGeometry("test");
+		if(newState=="connected")
+		{
+       		this.webRtcConnection.sendGeometry("test");
+		}
     }
     // We call Start() when the signaling server accepts the client.
     // In Start() we send the SetupCommand.
@@ -32,9 +41,33 @@ class Client {
     // We call StartStreaming once the SetupCommand has been acknowledged.
     StartStreaming()
     {
+		this.webRtcConnectionManager=WebRtcConnectionManager.getInstance();
         // We make sure WebRTC has a connection for this client.
-       this.webRtcConnection = webRtcConnectionManager.createConnection(this.clientID,this.streamingConnectionStateChanged);
+  		this.webRtcConnection = this.webRtcConnectionManager.createConnection(this.clientID,this.streamingConnectionStateChanged);
     }
+	UpdateStreaming()
+	{
+		if(!scene)
+			return;
+		var timestamp=core.getTimestamp();
+		// Establish which nodes the client should have, and their resources.
+		// Then: which resources we think it does not yet have. Send those.
+		node_uids=this.scene.GetAllNodes();
+		for (let uid of node_uids)
+		{
+			this.geometryService.StreamNode(uid);
+		}
+		nodes_to_stream_now_uids=this.geometryService.GetNodesToStream();
+		for (let uid of nodes_to_stream_now_uids)
+		{
+			this.SendNode(uid);
+			this.geometryService.trackedResources[uid].Sent(this.clientID,timestamp);
+		}
+	}
+	SendNode(uid)
+	{
+		this.webRtcConnection.sendGeometry("test");
+	}
     receiveHandshake(data)
     {
         if(data.length<message.HandshakeMessage.sizeof()){
@@ -61,6 +94,7 @@ class Client {
         var acknowledgeHandshakeCommand=new command.AcknowledgeHandshakeCommand;
         this.SendCommand(acknowledgeHandshakeCommand);
 		// And now, setup is complete. On the next geometry update, we can send nodes/resources.
+		this.StartStreaming();
     }
     receiveReliableBinaryMessage(data){
         const messageType=data[0];
@@ -72,6 +106,9 @@ class Client {
                 break;
         }
     }
+	SetScene(sc){
+		this.scene=sc;
+	}
 }
 
 module.exports = { Client };

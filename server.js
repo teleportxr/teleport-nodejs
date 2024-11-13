@@ -6,18 +6,22 @@ const cm = require('./client/client_manager.js');
 const signaling=require("./signaling.js");
 const scene=require("./scene/scene.js");
 
-const options = {
-    sendConfigMessage: signaling.sendConfigMessage
-};
+var sc=new scene.Scene();
+sc.Load("assets/scene.json");
 
-var s=new scene.Scene();
-s.Load("assets/scene.json");
-
-function createNewClient(clientID){
+function createNewClient(clientID) {
 	var origin_uid=s.CreateNode();
 	return origin_uid;
 }
 
-const webRtcConnectionManager = WebRtcConnectionManager.create(options);
+// This will be called AFTER a client has been created, so we can access it from the clientManager.
+function onClientPostCreate(clientID) {
+	var client=cm.getInstance().GetClient(clientID);
+	client->SetScene(sc);
+}
+
+const webRtcConnectionManager = WebRtcConnectionManager.getInstance();
+webRtcConnectionManager.SetSendConfigMessage(signaling.sendConfigMessage);
 cm.getInstance().SetNewClientCallback(createNewClient);
-signaling. init(webRtcConnectionManager,cm.getInstance().newClient.bind(cm.getInstance()));
+cm.getInstance().SetClientPostCreateCallback(onClientPostCreate);
+signaling.init(webRtcConnectionManager,cm.getInstance().newClient.bind(cm.getInstance()));

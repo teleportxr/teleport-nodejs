@@ -243,16 +243,19 @@ class WebRtcConnection extends EventEmitter
 		});
 	}
     sendGeometry(data){
-        this.geometryDataChannel.send('#START XXXXXXXX');
+		const buffer = new ArrayBuffer(16);
+		const view = new Int32Array(buffer);
+
+        this.geometryDataChannel.send(buffer);
     }
     beforeOffer(peerConnection) {
           
-        this.videoDataChannel = this.createDataChannel("video");
-        this.tagDataChannel = this.createDataChannel("video_tags");
-        this.audioToClientDataChannel = this.createDataChannel("audio_server_to_client");
-        this.geometryDataChannel = this.createDataChannel("geometry");
-        this.reliableDataChannel = this.createDataChannel("reliable");
-        this.unreliableDataChannel = this.createDataChannel("unreliable",false);
+        this.videoDataChannel = this.createDataChannel("video",20);
+        this.tagDataChannel = this.createDataChannel("video_tags",40);
+        this.audioToClientDataChannel = this.createDataChannel("audio_server_to_client",60);
+        this.geometryDataChannel = this.createDataChannel("geometry_unframed",80);
+        this.reliableDataChannel = this.createDataChannel("reliable",100);
+        this.unreliableDataChannel = this.createDataChannel("unreliable",120,false);
        // this.dataChannel = peerConnection.createDataChannel('ping-pong',{id:2050});
       
         function onMessage({ data }) {
@@ -272,10 +275,10 @@ class WebRtcConnection extends EventEmitter
         };
       }
       
-    createDataChannel(label,reliable=true)
+    createDataChannel(label,id,reliable=true)
     {
         //See https://web.dev/articles/webrtc-datachannels. Can only use id if negotiated=true.
-        const dataChannelOptions={ordered:reliable,maxRetransmits:reliable?10000:0};
+        const dataChannelOptions={ordered:reliable,maxRetransmits:reliable?10000:0,id:id};
         
         var dc=this.pc.createDataChannel(label,dataChannelOptions);
        

@@ -1,6 +1,6 @@
 'use strict';
 // using https://github.com/infusion/BitSet.js
-const bit=require("bitset.js");
+const bit=require("bitset");
 
 var clientIDToIndex=new Map();
 var nextIndex=0;
@@ -37,6 +37,7 @@ class TrackedResource
 		this.sent_server_time_us.delete(clientID);
 	}
 };
+
 class GeometryService
 {
 	static trackedResources=new Map();
@@ -44,7 +45,7 @@ class GeometryService
     constructor(clientID) {
 		this.clientID=clientID;
 		clientIDToIndex[clientID]=nextIndex++;
-		this.originNodeId = BigInt.asUintN(BigInt(0));
+		this.originNodeId = 0;
 		this.priority = 0;
 		// The lowest priority for which the client has confirmed all the nodes we sent.
 		// We only send lower-priority nodes when all higher priorities have been confirmed.
@@ -69,34 +70,34 @@ class GeometryService
 		this.streamedTextCanvases=new Map();
 		this.streamedFontAtlases=new Map();
     }
-	StreamNode(uid){
+	StreamNode(uid) {
 		// this client should stream node uid.
 		res=trackedResources[uid];
 		index=clientIDToIndex[this.clientID];
 		res.clientNeeds.BitSet(index,true);
 	}
-	UnstreamNode(uid){
+	UnstreamNode(uid) {
 		res=trackedResources[uid];
 		index=clientIDToIndex[this.clientID];
 		res.clientNeeds.BitSet(index,false);
 	}
-	GetNodesToStream(){
+	GetNodesToStream() {
 		// We have sets/maps of what the client SHOULD have, but some of these may have been sent already.
-			let time_now_us=GetServerTimeUs();
-			// ten seconds for timeout. Tweak this.
-			const timeout_us=10000000;
+		let time_now_us=GetServerTimeUs();
+		// ten seconds for timeout. Tweak this.
+		const timeout_us=10000000;
 		// Start with nodes. The set of ALL the nodes of sufficient priority that the client NEEDS is
 		// streamedNodes.
-			for(let uid in streamedNodes)
+		for(let uid in streamedNodes)
+		{
+			const tr=trackedResources[uid];
+			if(tr.acknowledged)
+				continue;
+			if(!tr.sent||time_now_us-tr.sent_server_time_us>timeout_us)
 			{
-				const tr=trackedResources[uid];
-				if(tr.acknowledged)
-					continue;
-				if(!tr.sent||time_now_us-tr.sent_server_time_us>timeout_us)
-				{
-					outNodeIDs.insert(r.first);
-				}
+				outNodeIDs.insert(r.first);
 			}
+		}
 		return this.nodesToStream;
 	}
 };

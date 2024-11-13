@@ -26,6 +26,7 @@ class WebRtcConnectionManager
         
         this.createConnection = async (clientID,connectionStateChangedcb) =>
         {
+			options.sendConfigMessage=this.sendConfigMessage;
             const connection = new Connection(clientID,options);
             connection.connectionStateChanged=connectionStateChangedcb;
             // 1. Add the "closed" listener.
@@ -55,6 +56,10 @@ class WebRtcConnectionManager
     {
         return this.getConnections().map(connection => connection.toJSON());
     }
+	SetSendConfigMessage(cfm)
+	{
+		this.sendConfigMessage=cfm;
+	}
 }
 
 WebRtcConnectionManager.create = function create (options)
@@ -67,5 +72,11 @@ WebRtcConnectionManager.create = function create (options)
         ...options
     });
 };
+
+WebRtcConnectionManager.getInstance = function(){
+	if(global.WebRtcConnectionManager_instance === undefined)
+	  global.WebRtcConnectionManager_instance = new WebRtcConnectionManager();
+	return global.WebRtcConnectionManager_instance;
+  }
 
 module.exports = WebRtcConnectionManager;

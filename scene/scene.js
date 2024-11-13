@@ -37,6 +37,11 @@ class Scene
 		this.nodes.set(uid,new nd.Node(uid));
 		return uid;
 	}
+	GetAllNodes()
+	{
+		let node_uids = Array.from( this.nodes.keys() );
+		return node_uids;
+	}
 	//! Load an initial scene state from a json file.
 	Load(filename)
 	{

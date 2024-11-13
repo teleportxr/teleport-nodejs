@@ -23,8 +23,8 @@ class Node
 		this.uid=uid;
 		this.name= "";
 		this.pose=new Pose();
-		this.uid=BigInt.asUintN(64,  BigInt(0));
-		this.parent_uid=BigInt.asUintN(64,  BigInt(0));
+		this.uid=0;
+		this.parent_uid=0;
     }
 };
 
