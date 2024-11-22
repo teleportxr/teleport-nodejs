@@ -17,6 +17,7 @@ function SizeOfType(member){
 		case "MessagePayloadType":
 		case "BackgroundMode":
 		case "AxesStandard":
+		case "GeometryPayloadType":
 			return [1,"uint8"];
 		case "CommandPayloadType":
 			return [1,"uint8"];
@@ -42,6 +43,7 @@ function SizeOfType(member){
 			return [89,"struct"];
 		case "VideoCodec":
 		case "AxesStandard":
+		case "GeometryPayloadType":
 		case "BackgroundMode":
 		case "LightingMode":
 			return [1,"uint8"];
@@ -194,6 +196,21 @@ const AxesStandard =
 	UnityStyle : 64 | this.YVertical | this.LeftHanded ,
 };
 
+const GeometryPayloadType =
+{
+	Invalid:0, 
+	Mesh:1,
+	Material:2,
+	MaterialInstance:3,
+	Texture:4,
+	Animation:5,
+	Node:6,
+	Skeleton:7,
+	FontAtlas:8,
+	TextCanvas:9,
+	TexturePointer:10,
+};
+
 class DisplayInfo
 {
 	constructor(){
@@ -328,7 +345,7 @@ function getStartTimeUnixUs(){
 	return startTimeUnixUs;
 }
 
-function getTimestamp(){
+function getTimestampUs(){
 	//var t_unix_ms=Date.now();
 	//var t_perf_us=performance.now();
 	const t_unix_us=microtime.now();
@@ -337,6 +354,6 @@ function getTimestamp(){
 }
 
 module.exports= {UID_SIZE,SizeOfType,encodeIntoDataView,decodeFromDataView
-	,vec4,BackgroundMode,AxesStandard,DisplayInfo,RenderingFeatures,LightingMode,VideoCodec
+	,vec4,BackgroundMode,AxesStandard,GeometryPayloadType,DisplayInfo,RenderingFeatures,LightingMode,VideoCodec
 	,VideoConfig,ClientDynamicLighting,encodeToUint8Array,decodeFromUint8Array
-	,generateUid,getStartTimeUnixUs,getTimestamp};
+	,generateUid,getStartTimeUnixUs,getTimestampUs};

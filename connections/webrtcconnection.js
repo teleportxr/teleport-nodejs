@@ -242,11 +242,13 @@ class WebRtcConnection extends EventEmitter
 			}
 		});
 	}
-    sendGeometry(data){
-		const buffer = new ArrayBuffer(16);
-		const view = new Int32Array(buffer);
-
-        this.geometryDataChannel.send(buffer);
+    sendGeometry(buffer) {
+		try {	
+        	this.geometryDataChannel.send(buffer);
+		}
+		catch(exception) {
+            console.error('datachannel.sendGeometry exception: '+exception.message);
+		}
     }
     beforeOffer(peerConnection) {
           

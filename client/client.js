@@ -4,6 +4,7 @@ const core= require("../protocol/core");
 const command= require("../protocol/command.js");
 const message= require("../protocol/message.js");
 const gs= require("./geometry_service.js");
+const node_encoder= require("../protocol/encoders/node_encoder.js");
 const WebRtcConnectionManager = require('../connections/webrtcconnectionmanager');
 
 class Client {
@@ -12,7 +13,7 @@ class Client {
         this.clientID=cid;
         this.origin_uid=0;
         this.handshakeMessage=new message.HandshakeMessage();
-		this.geometryService=new gs.GeometryService();
+		this.geometryService=new gs.GeometryService(cid);
     }
 	tick(timestamp){
 		this.geometryService.GetNodesToStream();
@@ -24,7 +25,7 @@ class Client {
         console.warn("Connection state is "+newState.toString());
 		if(newState=="connected")
 		{
-       		this.webRtcConnection.sendGeometry("test");
+       		//this.webRtcConnection.sendGeometry("test");
 		}
     }
     // We call Start() when the signaling server accepts the client.
@@ -47,12 +48,12 @@ class Client {
     }
 	UpdateStreaming()
 	{
-		if(!scene)
+		if(!this.scene)
 			return;
-		var timestamp=core.getTimestamp();
+		var timestamp=core.getTimestampUs();
 		// Establish which nodes the client should have, and their resources.
 		// Then: which resources we think it does not yet have. Send those.
-		node_uids=this.scene.GetAllNodes();
+		var node_uids=this.scene.GetAllNodeUids();
 		for (let uid of node_uids)
 		{
 			this.geometryService.StreamNode(uid);
@@ -61,16 +62,22 @@ class Client {
 		for (let uid of nodes_to_stream_now_uids)
 		{
 			this.SendNode(uid);
-			this.geometryService.trackedResources[uid].Sent(this.clientID,timestamp);
+			GeometryService.trackedResources[uid].Sent(this.clientID,timestamp);
 		}
 	}
 	SendNode(uid)
 	{
-		this.webRtcConnection.sendGeometry("test");
+		var node=this.scene.GetNode(uid);
+		const MAX_NODE_SIZE=500;
+		const buffer = new ArrayBuffer(MAX_NODE_SIZE);
+		const nodeSize=node_encoder.encodeNode(node,buffer);
+		geometryStreamingService.encodedResource(uid);
+		const view2 = new DataView(buffer, 0, nodeSize); 
+		this.webRtcConnection.sendGeometry(view2);
 	}
     receiveHandshake(data)
     {
-        if(data.length<message.HandshakeMessage.sizeof()){
+        if(data.length<message.HandshakeMessage.sizeof()) {
             // NOTE: we use log() here rather than warn() or error() because this is a problem with
             // the message we were SENT, not with the local server code.
             console.log("Binary message from "+this.clientID+" is too small to be a Handshake: "+data.length+"<"+message.HandshakeMessage.sizeof());

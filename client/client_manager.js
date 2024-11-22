@@ -19,7 +19,7 @@ class ClientManager
 	
 	StartStreaming(){
 		this.geometryIntervalId = setInterval(_.bind( function() {
-			console.log("Streaming Update at "+core.getTimestamp()/1000000.0);
+			console.log("Streaming Update at "+core.getTimestampUs()/1000000.0);
 			this.UpdateStreaming();
 		  },this), 5000);
 	}
@@ -88,7 +88,7 @@ class ClientManager
 		// then we tell the client manager to start this client.
 		var c=this.GetOrCreateClient(clientID);
 		signalingClient.receiveReliableBinaryMessage=c.receiveReliableBinaryMessage.bind(c);
-		c.SetScene(this.scene);
+		//c.SetScene(this.scene);
 		c.Start();
 		return c;
 	}

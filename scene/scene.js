@@ -37,7 +37,7 @@ class Scene
 		this.nodes.set(uid,new nd.Node(uid));
 		return uid;
 	}
-	GetAllNodes()
+	GetAllNodeUids()
 	{
 		let node_uids = Array.from( this.nodes.keys() );
 		return node_uids;
