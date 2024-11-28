@@ -2,44 +2,54 @@
 // using https://github.com/infusion/BitSet.js
 const bit=require("bitset");
 const core=require("../protocol/core.js");
+const nd=require("../scene/node.js");
 
 var clientIDToIndex=new Map();
 var nextIndex=0;
 
+//! Each resource (node, texture, mesh etc) what MAY need to be streamed has a TrackedResource.
+//! Then, within the TrackedResource class instance, we keep track of which clients:
+//! * Need this resource
+//! * Were sent the resource (and when)
+//! * Acknowledged that the resource was received.
+//! This is done with a bitset: each Client has an index. We set and clear the Client's bit in the
+//! TrackedResource's bitset members to indicate the resource's status with respect to the client.
+//!  The exception is sent_server_time_us: this is a Map from client ID to the time sent.
+//! We remove these values when no longer needed, to prevent the maps from getting too large.
 class TrackedResource
 {
     constructor(){
         this.clientNeeds=new bit.BitSet();		    // whether we THINK the client NEEDS the resource.
         this.sent=new bit.BitSet();			        // Whether we have actually sent the resource,
-        this.sent_server_time_us=new Map(); 	// and when we sent it. Map of clientID to timestamp.
+        this.sent_server_time_us=new Map(); 		// and when we sent it. Map of clientID to timestamp.
         this.acknowledged=new bit.BitSet();	        // Whether the client acknowledged receiving the resource.
 		
     }
-	IsNeededByClient(clientID){
-		return this.clientNeeds.bit[clientIDToIndex[clientID]];
+	IsNeededByClient(clientID) {
+		return this.clientNeeds.get[clientIDToIndex[clientID]];
 	}
-	WasSentToClient(cleitnID){
-		return this.sent.bit[clientIDToIndex[clientID]];
+	WasSentToClient(clientID) {
+		return this.sent.get[clientIDToIndex[clientID]];
 	}
-	WasAcknowledgedBy(clientID){
-		return this.acknowledged.bit[clientIDToIndex[clientID]];
+	WasAcknowledgedByClient(clientID) {
+		return this.acknowledged.get(clientIDToIndex[clientID]);
 	}
-	GetTimeSent(clientID){
+	GetTimeSent(clientID) {
 		return this.sent_server_time_us[clientID];
 	}
-	Sent(clientID,timestamp){
-		this.sent.BitSet(clientIDToIndex[clientID],true);
-		this.acknowledged.BitSet(clientIDToIndex[clientID],false);
+	Sent(clientID,timestamp) {
+		this.sent.set(clientIDToIndex[clientID],true);
+		this.acknowledged.set(clientIDToIndex[clientID],false);
 		this.sent_server_time_us.set(clientID,timestamp);
 	}
-	AcknowledgeBy(clientID){
-		this.acknowledged.BitSet(clientIDToIndex[clientID],true);
+	AcknowledgeBy(clientID) {
+		this.acknowledged.set(clientIDToIndex[clientID],true);
 		// erase timestamp?
 		this.sent_server_time_us.delete(clientID);
 	}
-	Timeout(clientID){
-		this.sent.BitSet(clientIDToIndex[clientID],false);
-		this.acknowledged.BitSet(clientIDToIndex[clientID],false);
+	Timeout(clientID) {
+		this.sent.set(clientIDToIndex[clientID],false);
+		this.acknowledged.set(clientIDToIndex[clientID],false);
 		this.sent_server_time_us.clear(clientID);
 	}
 };
@@ -59,7 +69,7 @@ class GeometryService
 		// How many nodes we have unconfirmed 
 		this.unconfirmed_priority_counts=new Map();
 		// Nodes the client needs, we might not send all at once.
-		this.nodesToStream=new Set();
+		this.nodesToStreamEventually=new Set();
 		//!The nodes actually to stream.
 		// When higher priority nodes are acknowledged,
 		// lower priority nodes AND their resources are added.
@@ -78,6 +88,9 @@ class GeometryService
 		this.streamedTextCanvases=new Map();
 		this.streamedFontAtlases=new Map();
     }
+	SetScene(sc){
+		this.scene=sc;
+	}
 	StreamNode(uid) {
 		// this client should stream node uid.
 		if(!GeometryService.trackedResources.has(uid))
@@ -86,35 +99,35 @@ class GeometryService
 		var index=clientIDToIndex.get(this.clientID);
 		res.clientNeeds.set(index,true);
 		// Add to the list of nodes this client should eventually receive:
-		this.nodesToStream.add(uid);
+		this.nodesToStreamEventually.add(uid);
 	}
 	UnstreamNode(uid) {
 		var res=GeometryService.trackedResources.get(uid);
 		var index=clientIDToIndex.get(this.clientID);
 		res.clientNeeds.BitSet(index,false);
 		// Should certainly be in this set:
-		this.nodesToStream.delete(uid);
+		this.nodesToStreamEventually.delete(uid);
 		// MAY not be in this set:
 		this.streamedNodes.delete(uid);
 	}
 	AddOrRemoveNodeAndResources(node_uid, remove)
 	{
 		var diff=remove?-1:1;
-		if(!streamedNodes.has(node_uid))
+		if(!this.streamedNodes.has(node_uid))
 		{
-			streamedNodes.set(node_uid,0);
+			this.streamedNodes.set(node_uid,0);
 		}
 		else if(!remove)
 		{
 			return;
 		}
-		var node = scene.getNode(node_uid);
-		streamedNodes.set(node_uid,streamedNodes.get(node_uid)+diff);
+		var node = this.scene.GetNode(node_uid);
+		this.streamedNodes.set(node_uid,this.streamedNodes.get(node_uid)+diff);
 		
 		//std.vector<MeshNodeResources> meshResources;
 		switch (node.data_type)
 		{
-			case NodeDataType.None:
+			case nd.NodeDataType.None:
 			case NodeDataType.Light:
 				break;
 			case NodeDataType.Skeleton:
@@ -124,26 +137,26 @@ class GeometryService
 			break;
 			case NodeDataType.Mesh:
 				{
-					meshResources=GetMeshNodeResources(node_uid, node );
+					var meshResources=GetMeshNodeResources(node_uid, node );
 					if(node.renderState.globalIlluminationUid>0)
 					{
-						streamedTextures[node.renderState.globalIlluminationUid]+=diff;
+						this.streamedTextures[node.renderState.globalIlluminationUid]+=diff;
 					}
 			
 					if(node.skeletonNodeID!=0)
 					{
-						var skeletonnode = scene.getNode(node.skeletonNodeID);
+						var skeletonnode = this.scene.getNode(node.skeletonNodeID);
 						if(!skeletonnode)
 						{
 							//TELEPORT_CERR<<"Missing skeleton node "<<node.skeletonNodeID<<std.endl;
 						}
 						else
 						{
-							streamedNodes[node.skeletonNodeID]+=diff;
+							this.streamedNodes[node.skeletonNodeID]+=diff;
 							meshResources=GetSkeletonNodeResources(node.skeletonNodeID, skeletonnode );
-							for(var r in meshResources)
+							for(var r of meshResources)
 							{
-								for(var b in r.boneIDs)
+								for(var b of r.boneIDs)
 								{
 									if(b)
 										streamedNodes.set(b,streamedNodes.get(b)+diff);
@@ -156,18 +169,18 @@ class GeometryService
 			case NodeDataType.TextCanvas:
 				if(node.data_uid)
 				{
-					var textCanvas=scene.getTextCanvas(node.data_uid);
+					var textCanvas=this.scene.getTextCanvas(node.data_uid);
 					if(c&&c.font_uid)
 					{
-						var fontAtlas =scene.getFontAtlas(c.font_uid);
+						var fontAtlas =this.scene.getFontAtlas(c.font_uid);
 						if(f)
 						{
 							if(node.data_uid)
-								streamedTextCanvases[node.data_uid]+=diff;
+								this.streamedTextCanvases[node.data_uid]+=diff;
 							if(c.font_uid)
-								streamedFontAtlases[c.font_uid]+=diff;
+								this.streamedFontAtlases[c.font_uid]+=diff;
 							if(f.font_texture_uid)
-								streamedTextures[f.font_texture_uid]+=diff;
+								this.streamedTextures[f.font_texture_uid]+=diff;
 						}
 					}
 				}
@@ -175,31 +188,32 @@ class GeometryService
 			default:
 				break;
 		}
-		for(var m in meshResources)
+		if(meshResources)
+		for(var m of meshResources)
 		{
-			for(var u in m.animationIDs)
+			for(var u of m.animationIDs)
 			{
-				streamedAnimations[u]+=diff;
+				this.streamedAnimations[u]+=diff;
 			}
-			for(var u in m.boneIDs)
+			for(var u of m.boneIDs)
 			{
-				streamedBones[u]+=diff;
+				this.streamedBones[u]+=diff;
 			}
-			for(var u in m.materials)
+			for(var u of m.materials)
 			{
-				streamedMaterials[u.material_uid]+=diff;
-				for(var t in u.texture_uids)
+				this.streamedMaterials[u.material_uid]+=diff;
+				for(var t of u.texture_uids)
 				{
-					streamedTextures[t]+=diff;
+					this.streamedTextures[t]+=diff;
 				}
 			}
 			if(m.mesh_uid)
 			{
-				streamedMeshes[m.mesh_uid]+=diff;
+				this.streamedMeshes[m.mesh_uid]+=diff;
 			}
 			if(m.skeletonAssetID)
 			{
-				streamedSkeletons[m.skeletonAssetID]+=diff;
+				this.streamedSkeletons[m.skeletonAssetID]+=diff;
 			}
 		}
 	}
@@ -209,12 +223,12 @@ class GeometryService
 		// ten seconds for timeout. Tweak this.
 		const timeout_us=10000000;
 		//  The set of ALL the nodes of sufficient priority that the client NEEDS is streamedNodes.
-		for(let uid in this.nodesToStream)
+		for(let uid of this.nodesToStreamEventually)
 		{
 			var res=GeometryService.trackedResources.get(uid);
 			// The client eventually should need this node.
 			// But if was already received we don't send it:
-			if(res.WasAcknowledgedBy(this.clientID))
+			if(res.WasAcknowledgedByClient(this.clientID))
 				continue;
 			if(res.WasSentToClient(this.clientID))
 			{
@@ -232,7 +246,7 @@ class GeometryService
 			else
 			{
 				// if it hasn't been sent at all to our client, we add its resources.
-				AddOrRemoveNodeAndResources(uid,false);
+				this.AddOrRemoveNodeAndResources(uid,false);
 			}
 			this.streamedNodes.set(uid,time_now_us);
 			res.Sent(this.clientID,time_now_us);

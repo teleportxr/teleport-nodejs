@@ -58,6 +58,26 @@ class PoseDynamic
 	}
 };
 
+//! The payload type, or how to interpret the server's message.
+const NodeDataType =
+{									
+	Invalid:0,		
+	None:1,
+	Mesh:2,
+	Light:3,
+	TextCanvas:4,
+	SubScene:5,
+	Skeleton:6,
+	Link:7
+};
+class RenderState
+{
+    constructor(){
+        this.lightmapScaleOffset= { x:1.0, y:1.0, z:0.0, w:0.0 };
+		this.globalIlluminationUid=0;
+    }
+}
+
 class Node
 {
     constructor(uid)
@@ -66,6 +86,17 @@ class Node
 		this.name= "";
 		this.pose=new Pose();
 		this.parent_uid=0;
+		this.data_type=NodeDataType.None;
+
+		this.holder_client_id=0;
+		this.stationary=true;
+
+		this.priority=0;
+		this.data_uid=0;
+
+		this.skeletonNodeID=0;
+
+		this.renderState=new RenderState();
     }
     static sizeof(){
         return 8+24+Pose.size+8;
@@ -95,4 +126,4 @@ class Node
 	}
 };
 
-module.exports = {Pose,PoseDynamic, Node };
+module.exports = {NodeDataType,Pose,PoseDynamic,Node };

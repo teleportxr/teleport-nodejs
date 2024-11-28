@@ -58,7 +58,7 @@ class Client {
 		{
 			this.geometryService.StreamNode(uid);
 		}
-		nodes_to_stream_now_uids=this.geometryService.GetNodesToStream();
+		var nodes_to_stream_now_uids=this.geometryService.GetNodesToStream();
 		for (let uid of nodes_to_stream_now_uids)
 		{
 			this.SendNode(uid);
@@ -115,6 +115,7 @@ class Client {
     }
 	SetScene(sc){
 		this.scene=sc;
+		this.geometryService.SetScene(sc);
 	}
 }
 
