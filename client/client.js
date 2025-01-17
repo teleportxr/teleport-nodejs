@@ -25,7 +25,7 @@ class Client {
         console.warn("Connection state is "+newState.toString());
 		if(newState=="connected")
 		{
-       		//this.webRtcConnection.sendGeometry("test");
+       		this.webRtcConnection.sendGeometry("test");
 		}
     }
     // We call Start() when the signaling server accepts the client.
@@ -59,7 +59,7 @@ class Client {
 			this.geometryService.StreamNode(uid);
 		}
 		var nodes_to_stream_now_uids=this.geometryService.GetNodesToStream();
-		for (let uid of nodes_to_stream_now_uids)
+		for (const [uid, count] of nodes_to_stream_now_uids)
 		{
 			this.SendNode(uid);
 			GeometryService.trackedResources[uid].Sent(this.clientID,timestamp);
@@ -71,7 +71,7 @@ class Client {
 		const MAX_NODE_SIZE=500;
 		const buffer = new ArrayBuffer(MAX_NODE_SIZE);
 		const nodeSize=node_encoder.encodeNode(node,buffer);
-		geometryStreamingService.encodedResource(uid);
+		this.geometryService.EncodedResource(uid);
 		const view2 = new DataView(buffer, 0, nodeSize); 
 		this.webRtcConnection.sendGeometry(view2);
 	}

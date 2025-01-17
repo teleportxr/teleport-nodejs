@@ -12,9 +12,7 @@ class Pose
     size(){
         return Pose.sizeof();
     }
-	encodeToUint8Array(){
-		var array=new Uint8Array(this.size());
-		var dataView=new DataView(array.buffer);
+	encodeIntoDataView(dataView,byteOffset) {
 		var byteOffset=0;
 		dataView.setFloat32(0,this.orientation.x);
 		dataView.setFloat32(4,this.orientation.y);
@@ -23,6 +21,12 @@ class Pose
 		dataView.setFloat32(16,this.position.x);
 		dataView.setFloat32(20,this.position.y);
 		dataView.setFloat32(24,this.position.z);
+		return byteOffset;
+	}
+	encodeToUint8Array(){
+		var array=new Uint8Array(this.size());
+		var dataView=new DataView(array.buffer);
+		this.encodeIntoDataView(dataView);
 		return array;
 	}
 };

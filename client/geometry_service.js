@@ -54,8 +54,10 @@ class TrackedResource
 	}
 };
 
+//! One GeometryService per connected client.
 class GeometryService
 {
+	//! One trackedResources shared acrosss all clients.
 	static trackedResources=new Map();
 
     constructor(clientID) {
@@ -252,6 +254,13 @@ class GeometryService
 			res.Sent(this.clientID,time_now_us);
 		}
 		return this.streamedNodes;
+	}
+
+	EncodedResource(resource_uid)
+	{
+		var res=GeometryService.trackedResources.get(resource_uid);
+		let time_now_us=core.getTimestampUs();
+		res.Sent(this.clientID,time_now_us);
 	}
 };
 
