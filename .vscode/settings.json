@@ -5,5 +5,8 @@
     "javascript.format.placeOpenBraceOnNewLineForFunctions": true,
     "typescript.format.placeOpenBraceOnNewLineForControlBlocks": true,
 	"typescript.format.placeOpenBraceOnNewLineForFunctions": true,
-	"editor.fontSize": 11
+	"editor.fontSize": 11,
+	"files.associations": {
+		"vector": "cpp"
+	}
 }

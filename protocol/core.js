@@ -1,6 +1,7 @@
 'use strict';
 var microtime = require('microtime')	// timings in microseconds.
 const UID_SIZE=8;
+const endian=true;
 // Get type information by "typename". Everything not listed is assumed to be a struct
 // (i.e. a js class with its own encodeIntoDataView function.)
 function SizeOfType(member){
@@ -61,31 +62,31 @@ function encodeIntoDataView(obj,dataView,byteOffset){
 		var [sz,tp]=SizeOfType(type);
 		if(tp=="uint8")
 		{
-			dataView.setUint8(byteOffset,value);
+			dataView.setUint8(byteOffset,value,endian);
 		}
 		else if(tp=="int8")
 		{
-			dataView.setInt8(byteOffset,value);
+			dataView.setInt8(byteOffset,value,endian);
 		}
 		else if(tp=="uint32")
 		{
-			dataView.setUint32(byteOffset,value);
+			dataView.setUint32(byteOffset,value,endian);
 		}
 		else if(tp=="int32")
 		{
-			dataView.setInt32(byteOffset,value);
+			dataView.setInt32(byteOffset,value,endian);
 		}
 		else if(tp=="float32")
 		{
-			dataView.setFloat32(byteOffset,value);
+			dataView.setFloat32(byteOffset,value,endian);
 		}
 		else if(tp=="int64")
 		{
-			dataView.setBigInt64(byteOffset,value);
+			dataView.setBigInt64(byteOffset,value,endian);
 		}
 		else if(tp=="uint64")
 		{
-			dataView.setBigUint64(byteOffset,value);
+			dataView.setBigUint64(byteOffset,value,endian);
 		}
 		else if(tp=="struct")
 		{
@@ -110,37 +111,37 @@ function decodeFromDataView(obj,dataView,byteOffset){
 		if(tp=="uint8")
 		{
 			var value=dataView.getUint8(byteOffset);
-			Object.entries[key]=value;
+			obj[key]=value;
 		}
 		else if(tp=="int8")
 		{
 			var value=dataView.getInt8(byteOffset);
-			Object.entries[key]=value;
+			obj[key]=value;
 		}
 		else if(tp=="uint32")
 		{
-			var value=dataView.getUint32(byteOffset);
-			Object.entries[key]=value;
+			var value=dataView.getUint32(byteOffset,endian);
+			obj[key]=value;
 		}
 		else if(tp=="int32")
 		{
-			var value=dataView.getInt32(byteOffset);
-			Object.entries[key]=value;
+			var value=dataView.getInt32(byteOffset,endian);
+			obj[key]=value;
 		}
 		else if(tp=="float32")
 		{
-			var value=dataView.getFloat32(byteOffset);
-			Object.entries[key]=value;
+			var value=dataView.getFloat32(byteOffset,endian);
+			obj[key]=value;
 		}
 		else if(tp=="int64")
 		{
-			var value=dataView.getBigInt64(byteOffset);
-			Object.entries[key]=value;
+			var value=dataView.getBigInt64(byteOffset,endian);
+			obj[key]=value;
 		}
 		else if(tp=="uint64")
 		{
-			var value=dataView.getBigUint64(byteOffset);
-			Object.entries[key]=value;
+			var value=dataView.getBigUint64(byteOffset,endian);
+			obj[key]=value;
 		}
 		else if(tp=="struct")
 		{
@@ -353,7 +354,55 @@ function getTimestampUs(){
 	return t_us;
 }
 
-module.exports= {UID_SIZE,SizeOfType,encodeIntoDataView,decodeFromDataView
+function put_float32(dataView,byteOffset,value)
+{
+	dataView.setFloat32(byteOffset,value,endian);
+	byteOffset+=4;
+	return byteOffset;
+}
+
+function put_int32(dataView,byteOffset,value)
+{
+	dataView.setInt32(byteOffset,value,endian);
+	byteOffset+=4;
+	return byteOffset;
+}
+
+function put_uint32(dataView,byteOffset,value)
+{
+	dataView.setUint32(byteOffset,value,endian);
+	byteOffset+=4;
+	return byteOffset;
+}
+
+function put_uint64(dataView,byteOffset,value)
+{
+	dataView.setBigUint64(byteOffset,BigInt(value),endian);
+	byteOffset+=8;
+	return byteOffset;
+}
+
+function put_uint8(dataView,byteOffset,value)
+{
+	dataView.setUint8(byteOffset,value,endian);
+	byteOffset++;
+	return byteOffset;
+}
+function put_vec4(dataView,byteOffset,value)
+{
+	dataView.setFloat32(byteOffset,value.x,endian);
+	byteOffset++;
+	dataView.setFloat32(byteOffset,value.y,endian);
+	byteOffset++;
+	dataView.setFloat32(byteOffset,value.z,endian);
+	byteOffset++;
+	dataView.setFloat32(byteOffset,value.w,endian);
+	byteOffset++;
+	return byteOffset;
+}
+
+module.exports= {UID_SIZE,endian,SizeOfType,encodeIntoDataView,decodeFromDataView
 	,vec4,BackgroundMode,AxesStandard,GeometryPayloadType,DisplayInfo,RenderingFeatures,LightingMode,VideoCodec
 	,VideoConfig,ClientDynamicLighting,encodeToUint8Array,decodeFromUint8Array
-	,generateUid,getStartTimeUnixUs,getTimestampUs};
+	,generateUid,getStartTimeUnixUs,getTimestampUs,put_float32,put_int32,put_uint32
+	,put_uint64,put_uint8,put_vec4};

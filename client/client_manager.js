@@ -3,6 +3,7 @@ const core=require("../protocol/core.js");
 const client=require("./client.js");
 const signaling=require("../signaling.js");
 var _ = require('underscore');
+const WebRtcConnectionManager = require('../connections/webrtcconnectionmanager');
 
 class ClientManager
 {

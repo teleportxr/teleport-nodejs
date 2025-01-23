@@ -38,12 +38,13 @@ class WebRtcConnection extends EventEmitter
 			timeToReconnected
 		} = options;
 
-		this.connectionStateChanged=options.connectionStateChanged;
-		this.sendConfigMessage=options.sendConfigMessage;
-		const peerConnection = new RTCPeerConnection({
-			sdpSemantics: 'unified-plan'
-		});
-        this.pc=peerConnection;
+		this.connectionStateChanged	=options.connectionStateChanged;
+		this.messageReceivedReliableCb		=options.messageReceivedReliable;
+		this.messageReceivedUnreliableCb	=options.messageReceivedUnreliable;
+		
+		this.sendConfigMessage		=options.sendConfigMessage;
+		const peerConnection		=new RTCPeerConnection({ sdpSemantics: 'unified-plan'});
+        this.pc						=peerConnection;
         
 		this.beforeOffer(peerConnection);
  
@@ -277,6 +278,27 @@ class WebRtcConnection extends EventEmitter
         };
       }
       
+	receiveMessage(id,event)
+	{
+        //.videoDataChannel = .("video",20);
+        //.tagDataChannel = .("video_tags",40);
+        //.audioToClientDataChannel = .("audio_server_to_client",60);
+        //.geometryDataChannel =l("geometry_unframed",80);
+        //.reliableDataChannel =l("reliable",100);
+        //.unreliableDataChannelnel("unreliable",120,false);
+		switch(id)
+		{
+			case 120:
+				this.messageReceivedUnreliableCb(id,event);
+				break;
+			case 100:
+				this.messageReceivedReliableCb(id,event);
+				break;
+			default:
+				break;
+		}
+		// event is an ArrayBuffer.
+	};
     createDataChannel(label,id,reliable=true)
     {
         //See https://web.dev/articles/webrtc-datachannels. Can only use id if negotiated=true.
@@ -284,9 +306,7 @@ class WebRtcConnection extends EventEmitter
         
         var dc=this.pc.createDataChannel(label,dataChannelOptions);
        
-         dc.onmessage = (event) => {
-            console.log('datachannel '+label+' received: '+event.data+'.');
-        };
+         dc.onmessage = this.receiveMessage.bind(this,id);
   
           dc.onopen = (event) => {
             console.log('datachannel '+label+' open');

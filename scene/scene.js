@@ -56,7 +56,7 @@ class Scene
 			const pose=sub_obj["pose"];
 			if(pose){
 				n.pose.position={x:pose.position[0],y:pose.position[1],z:pose.position[2]};
-				n.pose.orientation={x:pose.orientation[0],y:pose.position[1],z:pose.position[2],s:pose.position[3]};
+				n.pose.orientation={x:pose.orientation[0],y:pose.orientation[1],z:pose.orientation[2],w:pose.orientation[3]};
 			}
 		}
 	}

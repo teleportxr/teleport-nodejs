@@ -105,4 +105,23 @@ class HandshakeMessage extends Message
     }
 };
 
-module.exports= {Message,HandshakeMessage,MessagePayloadType};
+class ReceivedResourcesMessage extends Message
+{
+    constructor(){
+        super();
+        //   type=1 byte
+        this.MessagePayloadType_messagePayloadType=MessagePayloadType.ReceivedResources;
+		// timestamp 8 bytes.
+		// count 8 bytes
+        this.uint64_receivedResourcesCount=BigInt(0);
+		// = 17 + 8 * num resources.
+    }
+    static sizeof(){
+        return 17;
+    }
+    size(){
+        return ReceivedResourcesMessage.sizeof();
+    }
+};
+
+module.exports= {Message,MessagePayloadType,HandshakeMessage,ReceivedResourcesMessage};

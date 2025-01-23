@@ -15,29 +15,33 @@ class WebRtcConnectionManager
 		const closedListeners = new Map();
 
 		function deleteConnection(connection) {
-			// 1. Remove "closed" listener.
-			const closedListener = closedListeners.get(connection);
-			closedListeners.delete(connection);
-			connection.removeListener("closed", closedListener);
+			// 1. Remove "closed" listener?
+			//const closedListener = closedListeners.get(connection);
+			//connection.removeListener("closed", closedListener);
+			//closedListeners.delete(connection);
 
 			// 2. Remove the Connection from the Map.
 			connections.delete(connection.id);
 		}
         
-        this.createConnection = async (clientID,connectionStateChangedcb) =>
+        this.createConnection =  (clientID,connectionStateChangedcb,messageReceivedReliableCb,messageReceivedUnreliableCb) =>
         {
-			options.sendConfigMessage=this.sendConfigMessage;
+			options.sendConfigMessage	=this.sendConfigMessage;
+           
+			options.messageReceivedReliable		=messageReceivedReliableCb;
+			options.messageReceivedUnreliable	=messageReceivedUnreliableCb;
             const connection = new Connection(clientID,options);
             connection.connectionStateChanged=connectionStateChangedcb;
             // 1. Add the "closed" listener.
             function closedListener() { deleteConnection(connection); }
+			this.createConnection = (clientID) =>
             closedListeners.set(connection, closedListener);
             connection.once('closed', closedListener);
 
             // 2. Add the Connection to the Map.
             connections.set(connection.id, connection);
 
-            await connection.doOffer();
+            connection.doOffer();
             return connection;
         };
 
