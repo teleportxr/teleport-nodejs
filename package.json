@@ -11,10 +11,9 @@
   "scripts": {
     "start": "node server.js"
   },
-  "name": "teleport-nodejs",
+  "name": "teleport-server",
   "description": "A minimal Teleport server on node.js",
   "version": "1.0.0",
-  "main": "server.js",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/simul/teleport-nodejs.git"
@@ -24,5 +23,12 @@
   "bugs": {
     "url": "https://github.com/simul/teleport-nodejs/issues"
   },
-  "homepage": "https://github.com/simul/teleport-nodejs#readme"
+  "homepage": "https://github.com/simul/teleport-nodejs#readme",
+  "exports": {
+    ".": "./index.js",
+	"./signaling": "./signaling.js",
+	"./client/client_manager": "./client/client_manager.js",
+    "./connections/webrtcconnectionmanager": "./connections/webrtcconnectionmanager.js",
+	"./scene/scene":"./scene/scene.js"
+  }
 }

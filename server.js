@@ -7,7 +7,13 @@ const signaling=require("./signaling.js");
 const scene=require("./scene/scene.js");
 
 var sc=new scene.Scene();
-sc.Load("assets/scene.json");
+
+const fs = require('fs');
+const path = require('path');
+
+const assetsPath = path.join(__dirname,'assets');
+
+sc.Load(path.join(assetsPath,'scene.json'));
 
 // This is our app's callback for when a new client is to be created.
 // It must return the origin uid for the client.

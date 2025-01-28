@@ -21,7 +21,7 @@ const CommandPayloadType =
 	AssignNodePosePath:14,				
 	SetupInputs:15,
 	PingForLatency:16,
-	SetStageSpaceOriginNode:128		
+	SetOriginNode:128		
 };
 class Command{
 	constructor(){
@@ -79,4 +79,46 @@ class AcknowledgeHandshakeCommand extends Command{
         return AcknowledgeHandshakeCommand.sizeof();
     }
 };
+
+
+//! A command that expects an acknowledgement of receipt from the client using an AcknowledgementMessage.
+class AckedCommand extends Command
+{
+    constructor(){
+        super();
+        //   Command=1 byte
+		// ackId 8 bytes
+        this.uint64_ackId=BigInt(0);
+			//! The id that is used to acknowledge receipt via AcknowledgementMessage.
+			// Should increase monotonically per-full-client-session: clients can ignore any id less than or equal to a previously received id.
+    }
+    static sizeof(){
+        return 9;
+    }
+    size(){
+        return AckedCommand.sizeof();
+    }
+};
+
+//! Sent from server to client to set the origin of the client's space.
+class SetOriginNodeCommand extends AckedCommand
+{
+    constructor(){
+        super();
+        //   Command=1 byte
+        this.CommandPayloadType_commandPayloadType=CommandPayloadType.SetOriginNode;
+        //   AckedCommand=9 bytes
+		// uint64_originNodeUid 8 bytes
+		this.uint64_originNodeUid=BigInt(0);		//!< The session uid of the node to use as the origin.
+		
+		// uint64_validCounter 8 bytes
+		//! A validity value. Larger values indicate newer data, so the client ignores messages with smaller validity than the last one received.
+		this.uint64_validCounter =BigInt(0);
+    }
+	static sizeof()
+	{
+		return AckedCommand.sizeof()+16;
+	}
+};
+
 module.exports= {Command,CommandPayloadType,SetupCommand,AcknowledgeHandshakeCommand};

@@ -77,6 +77,7 @@ class Message{
         this.int64_timestamp=BigInt(0);
     }
 }
+
 class HandshakeMessage extends Message
 {
     constructor(){
@@ -123,5 +124,22 @@ class ReceivedResourcesMessage extends Message
         return ReceivedResourcesMessage.sizeof();
     }
 };
-
-module.exports= {Message,MessagePayloadType,HandshakeMessage,ReceivedResourcesMessage};
+class AcknowledgementMessage extends Message
+{
+    constructor(){
+        super();
+        //   type=1 byte
+        this.MessagePayloadType_messagePayloadType=MessagePayloadType.Acknowledgement;
+		// timestamp 8 bytes.
+		// count 8 bytes
+        this.uint64_ackId=BigInt(0);
+		// = 17 bytes
+    }
+    static sizeof(){
+        return 17;
+    }
+    size() {
+        return AcknowledgementMessage.sizeof();
+    }
+};
+module.exports= {Message,MessagePayloadType,HandshakeMessage,ReceivedResourcesMessage,AcknowledgementMessage};

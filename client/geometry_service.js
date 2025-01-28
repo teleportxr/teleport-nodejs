@@ -93,6 +93,12 @@ class GeometryService
 	SetScene(sc){
 		this.scene=sc;
 	}
+	SetOriginNode(n_uid){
+		if(this.originNodeId ==n_uid)
+			return;
+		this.originNodeId = n_uid;
+		StreamNode(n_uid);
+	}
 	StreamNode(uid) {
 		// this client should stream node uid.
 		if(!GeometryService.trackedResources.has(uid))
@@ -104,6 +110,8 @@ class GeometryService
 		this.nodesToStreamEventually.add(uid);
 	}
 	UnstreamNode(uid) {
+		if(!GeometryService.trackedResources.has(uid))
+			return;
 		var res=GeometryService.trackedResources.get(uid);
 		var index=clientIDToIndex.get(this.clientID);
 		res.clientNeeds.BitSet(index,false);
@@ -227,6 +235,8 @@ class GeometryService
 		//  The set of ALL the nodes of sufficient priority that the client NEEDS is streamedNodes.
 		for(let uid of this.nodesToStreamEventually)
 		{
+			if(!GeometryService.trackedResources.has(uid))
+				continue;
 			var res=GeometryService.trackedResources.get(uid);
 			// The client eventually should need this node.
 			// But if was already received we don't send it:
@@ -258,9 +268,22 @@ class GeometryService
 
 	EncodedResource(resource_uid)
 	{
+		if(!GeometryService.trackedResources.has(resource_uid))
+			return;
 		var res=GeometryService.trackedResources.get(resource_uid);
-		let time_now_us=core.getTimestampUs();
-		res.Sent(this.clientID,time_now_us);
+		if(res) {
+			let time_now_us=core.getTimestampUs();
+			res.Sent(this.clientID,time_now_us);
+		}
+	}
+	ConfirmResource(resource_uid)
+	{
+		if(!GeometryService.trackedResources.has(resource_uid))
+			return;
+		var res=GeometryService.trackedResources.get(resource_uid);
+		if(res) {
+			res.AcknowledgeBy(this.clientID);
+		}
 	}
 };
 

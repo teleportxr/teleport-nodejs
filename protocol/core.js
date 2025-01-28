@@ -334,9 +334,38 @@ function decodeFromUint8Array(object,array){
 var generateUid = (function () {
 	var i = 1;
 	return function () {
-		return i++;
+		return BigInt(i++);
 	};
 })();
+
+function unixTimeToUTCString(unix_time_us)
+{
+	let unix_timestamp_ms = unix_time_us/1000.0;
+
+	// Create a new JavaScript Date object based on the timestamp
+	// multiplied by 1000 so that the argument is in milliseconds, not seconds
+	var date = new Date(unix_timestamp_ms);
+
+	var hours = date.getHours();
+	return Intl.DateTimeFormat('en-GB', {
+		dateStyle: 'full',
+		timeStyle: 'long',
+		timeZone: 'UTC',
+	  }).format(date)
+	// Hours part from the timestamp
+/*	var hours = date.getHours();
+
+	// Minutes part from the timestamp
+	var minutes = "0" + date.getMinutes();
+
+	// Seconds part from the timestamp
+	var seconds = "0" + date.getSeconds();
+
+	// Will display time in 10:30:23 format
+	var formattedTime = hours + ':' + minutes.substr(-2) + ':' + seconds.substr(-2);
+
+	return formattedTime;*/
+}
 
 var startTimeUnixUs=0;
 
@@ -404,5 +433,6 @@ function put_vec4(dataView,byteOffset,value)
 module.exports= {UID_SIZE,endian,SizeOfType,encodeIntoDataView,decodeFromDataView
 	,vec4,BackgroundMode,AxesStandard,GeometryPayloadType,DisplayInfo,RenderingFeatures,LightingMode,VideoCodec
 	,VideoConfig,ClientDynamicLighting,encodeToUint8Array,decodeFromUint8Array
-	,generateUid,getStartTimeUnixUs,getTimestampUs,put_float32,put_int32,put_uint32
+	,generateUid,getStartTimeUnixUs,getTimestampUs,
+	unixTimeToUTCString,put_float32,put_int32,put_uint32
 	,put_uint64,put_uint8,put_vec4};

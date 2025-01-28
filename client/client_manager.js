@@ -14,7 +14,8 @@ class ClientManager
 		this.addNewClientAndReturnOriginUid=null;
 		this.onClientPostCreate=null;
 		this.geometryIntervalId=0;
-		console.log("Start Unix Time us: "+core.getStartTimeUnixUs()+"\n");
+		let unixt_us=core.getStartTimeUnixUs();
+		console.log("Start Time: "+unixt_us+" us = "+core.unixTimeToUTCString(unixt_us)+"\n");
 		//console.log("From Date: "+Date.now()*1000+"\n");
     }
 	

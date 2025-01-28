@@ -7,6 +7,19 @@ const gs= require("./geometry_service.js");
 const node_encoder= require("../protocol/encoders/node_encoder.js");
 const WebRtcConnectionManager = require('../connections/webrtcconnectionmanager');
 
+
+class OriginState
+{
+    constructor() {
+		this.sent=false;
+		this.originClientHas=BigInt(0);
+		this.ack_id=0;
+		this.acknowledged=false;
+		this.serverTimeSentUs=BigInt(0);
+		this.valid_counter=BigInt(0);
+	}
+};
+
 class Client {
     constructor(cid,sigSend) {
 		this.signalingSend=sigSend;
@@ -16,6 +29,8 @@ class Client {
 		this.geometryService=new gs.GeometryService(cid);
 		this.webRtcConnected=false;
 		this.webRtcConnection=null;
+		this.currentOriginState=new OriginState();
+		this.next_ack_id=BigInt(0);
     }
 	tick(timestamp){
 		this.geometryService.GetNodesToStream();
@@ -24,7 +39,7 @@ class Client {
     {
         //this.webRtcConnection=wrtcConn;
 		// This should have come from our own existing webRtcConnection and nowhere else.
-        console.warn("Connection state is "+newState.toString());
+        console.log("Connection state is "+newState.toString());
 		if(newState=="connected")
 		{
        		//this.webRtcConnection.sendGeometry("test");
@@ -57,18 +72,17 @@ class Client {
         var msg				=new message.ReceivedResourcesMessage();
 		var uia				=new Uint8Array(bf);
 		var dataView		=new DataView(bf,0,bf.length);
-		core.decodeFromDataView(msg,dataView);
+		core.decodeFromDataView(msg,dataView,0);
         const excess		=uia.length-message.ReceivedResourcesMessage.sizeof();
         const numReceived	=excess/core.UID_SIZE;
         if(numReceived!=msg.uint64_receivedResourcesCount) {
             console.log("ReceivedResourcesMessage claims to have "<<msg.resourceCount<<" resources but has only enough data for "+numReceived);
             return;
         }
-        var offset			=message.NodeStatusMessage.sizeof();
-        var dataView		=new DataView(data.buffer,offset,data.offset,data.length);
-        for(let i=0;i<msg.resourceCount;i++ ) {
-            var uid=dataView.getBigUint64(offset);
-            this.geometryService.confirmResource(uid);
+        var offset			=message.ReceivedResourcesMessage.sizeof();
+        for(let i=0;i<msg.uint64_receivedResourcesCount;i++ ) {
+            var uid=dataView.getBigUint64(offset,core.endian);
+            this.geometryService.ConfirmResource(uid);
             offset+=core.UID_SIZE;
         }
 	}
@@ -111,6 +125,21 @@ class Client {
 		//	function(value) {myDisplayer(value);},
 		//	function(error) {myDisplayer(error);}
     }
+	// Generic message acknowledgement. Certain kinds of message are expected to be ack'ed.
+	ReceiveAcknowledgement(data)
+	{
+		if (data.length!=core.AcknowledgementMessage.sizeof())
+		{
+			console.log("Client: Received malformed AcknowledgementMessage packet of length: ",data.length);
+			return;
+		}
+        var acknowledgementMessage=new message.AcknowledgementMessage();
+		core.decodeFromUint8Array(acknowledgementMessage,data);
+		if(msg.ackId==currentOriginState.ackId)
+		{
+			this.currentOriginState.acknowledged=true;
+		}
+	}
 	UpdateStreaming()
 	{
 		if(!this.scene)
@@ -131,6 +160,37 @@ class Client {
 			this.SendNode(uid);
 			//gs.GeometryService.trackedResources[uid].Sent(this.clientID,timestamp);
 		}
+		if(!this.currentOriginState.acknowledged)
+			this.SendOrigin();
+	}
+	SendOrigin()
+	{
+		let time_now_us=core.getTimestampUs();
+		let originAckWaitTimeUs=BigInt(3000000);// three seconds
+		// If we sent it, and 
+		if(this.currentOriginState.serverTimeSentUs!=BigInt(0)
+			&&(time_now_us-this.currentOriginState.serverTimeSentUs)<originAckWaitTimeUs)
+		{
+			return;
+		}
+		if (!this.webRtcConnection)
+		{
+			return;
+		}
+		this.currentOriginState.valid_counter++;
+		this.geometryService.SetOriginNode(origin_node_uid);
+		var setp=new command.SetOriginNodeCommand();
+		setp.ackId=this.next_ack_id++;
+		setp.origin_node=this.currentOriginState.origin_node_uid;
+		setp.valid_counter = this.currentOriginState.valid_counter;
+		
+		// This is now the valid origin.
+		this.currentOriginState.originClientHas=origin_node_uid;
+		this.currentOriginState.sent=true;
+		this.currentOriginState.ackId=setp.ackId;
+		this.currentOriginState.acknowledged=false;
+		this.currentOriginState.serverTimeSentUs=core.getTimestampUs();
+		this.sendCommand(setp);
 	}
 	SendNode(uid)
 	{
@@ -162,8 +222,8 @@ class Client {
 			var offset		=message.HandshakeMessage.sizeof();
 			var dataView	=new DataView(data.buffer,offset,data.offset,data.length);
 			for(let i=0;i<this.handshakeMessage.resourceCount;i++ ) {
-				var uid=dataView.getBigUint64(offset);
-				this.geometryService.confirmResource(uid);
+				var uid=dataView.getBigUint64(offset,core.endian);
+				this.geometryService.ConfirmResource(uid);
 				offset+=core.UID_SIZE;
 			}
 		}
@@ -178,6 +238,9 @@ class Client {
             case message.MessagePayloadType.Handshake:
                 this.receiveHandshake(data);
                 return;
+			case message.MessagePayloadType.Acknowledgement:
+				this.ReceiveAcknowledgement(data);
+				return;
             default:
                 break;
         }
@@ -185,6 +248,17 @@ class Client {
 	SetScene(sc){
 		this.scene=sc;
 		this.geometryService.SetScene(sc);
+	}
+	setOrigin(origin_node_uid)
+	{
+		if(origin_node_uid==0)
+			return;
+		if(this.setupCommand.startTimestamp_utc_unix_us==0)
+			return ;
+		if(this.currentOriginState.originClientHas==origin_node_uid)
+			return;
+		// It's a different origin. So we reset the time sent.
+		this.currentOriginState.serverTimeSentUs=BigInt(0);
 	}
 }
 
