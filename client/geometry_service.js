@@ -96,8 +96,8 @@ class GeometryService
 	SetOriginNode(n_uid){
 		if(this.originNodeId ==n_uid)
 			return;
-		this.originNodeId = n_uid;
-		StreamNode(n_uid);
+		this.originNodeId = n_uid;-
+		this.StreamNode(n_uid);
 	}
 	StreamNode(uid) {
 		// this client should stream node uid.

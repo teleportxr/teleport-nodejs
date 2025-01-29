@@ -28,13 +28,13 @@ class Scene
         var c=this.nodes.get(uid);
         return c;
     }
-	CreateNode()
+	CreateNode(name)
 	{
 		var uid=core.generateUid();
         if(this.nodes.has(uid)){
 			error("Uid "+uid+" already present.");
 		}
-		this.nodes.set(uid,new nd.Node(uid));
+		this.nodes.set(uid,new nd.Node(uid,name));
 		return uid;
 	}
 	GetAllNodeUids()
@@ -57,6 +57,13 @@ class Scene
 			if(pose){
 				n.pose.position={x:pose.position[0],y:pose.position[1],z:pose.position[2]};
 				n.pose.orientation={x:pose.orientation[0],y:pose.orientation[1],z:pose.orientation[2],w:pose.orientation[3]};
+			}
+			const components=sub_obj["components"];
+			if(components){
+				for(let c of components){
+					if(c["type"]=="mesh")
+						n.setMeshComponent(c["url"]);
+				}
 			}
 		}
 	}

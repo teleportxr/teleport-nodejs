@@ -13,7 +13,7 @@ class OriginState
     constructor() {
 		this.sent=false;
 		this.originClientHas=BigInt(0);
-		this.ack_id=0;
+		this.ackId=0;
 		this.acknowledged=false;
 		this.serverTimeSentUs=BigInt(0);
 		this.valid_counter=BigInt(0);
@@ -30,7 +30,7 @@ class Client {
 		this.webRtcConnected=false;
 		this.webRtcConnection=null;
 		this.currentOriginState=new OriginState();
-		this.next_ack_id=BigInt(0);
+		this.next_ack_id=BigInt(1);
     }
 	tick(timestamp){
 		this.geometryService.GetNodesToStream();
@@ -88,14 +88,17 @@ class Client {
 	}
 	receivedMessageUnreliable(id,pkt)
 	{
-		console.log('Client receivedMessage reliable ch.'+id+' received: '+pkt+'.');
 
         var dataView=new DataView(pkt.data,0,1);
         const messageType=dataView.getUint8(0);
+		//console.log('Client receivedMessage reliable ch.'+id+' received: '+messageType+'.');
         switch(messageType){
             case message.MessagePayloadType.ReceivedResources:
                 this.receiveReceivedResourcesMessage(pkt.data);
                 return;
+			case message.MessagePayloadType.Acknowledgement:
+				this.ReceiveAcknowledgement(pkt.data);
+				return;
             default:
                 break;
         }
@@ -128,14 +131,17 @@ class Client {
 	// Generic message acknowledgement. Certain kinds of message are expected to be ack'ed.
 	ReceiveAcknowledgement(data)
 	{
-		if (data.length!=core.AcknowledgementMessage.sizeof())
+		if (data.byteLength!=message.AcknowledgementMessage.sizeof())
 		{
 			console.log("Client: Received malformed AcknowledgementMessage packet of length: ",data.length);
 			return;
 		}
-        var acknowledgementMessage=new message.AcknowledgementMessage();
-		core.decodeFromUint8Array(acknowledgementMessage,data);
-		if(msg.ackId==currentOriginState.ackId)
+        var msg				=new message.AcknowledgementMessage();
+		var bf				=data;
+		var uia				=new Uint8Array(bf);
+		var dataView		=new DataView(data,0,data.length);
+		core.decodeFromDataView(msg,dataView,0);
+		if(msg.uint64_ackId==this.currentOriginState.ackId)
 		{
 			this.currentOriginState.acknowledged=true;
 		}
@@ -167,7 +173,9 @@ class Client {
 	{
 		let time_now_us=core.getTimestampUs();
 		let originAckWaitTimeUs=BigInt(3000000);// three seconds
-		// If we sent it, and 
+		if(this.setupCommand.startTimestamp_utc_unix_us==0)
+			return ;
+		// If we sent it, and  haven't timed out waiting for ack...
 		if(this.currentOriginState.serverTimeSentUs!=BigInt(0)
 			&&(time_now_us-this.currentOriginState.serverTimeSentUs)<originAckWaitTimeUs)
 		{
@@ -177,20 +185,21 @@ class Client {
 		{
 			return;
 		}
+		if(this.currentOriginState.originClientHas==BigInt(0))
+			return;
 		this.currentOriginState.valid_counter++;
-		this.geometryService.SetOriginNode(origin_node_uid);
+		this.geometryService.SetOriginNode(this.currentOriginState.originClientHas);
 		var setp=new command.SetOriginNodeCommand();
-		setp.ackId=this.next_ack_id++;
-		setp.origin_node=this.currentOriginState.origin_node_uid;
-		setp.valid_counter = this.currentOriginState.valid_counter;
+		setp.uint64_ackId=this.next_ack_id++;
+		setp.uint64_originNodeUid=this.currentOriginState.originClientHas;
+		setp.uint64_validCounter = this.currentOriginState.valid_counter;
 		
 		// This is now the valid origin.
-		this.currentOriginState.originClientHas=origin_node_uid;
 		this.currentOriginState.sent=true;
-		this.currentOriginState.ackId=setp.ackId;
+		this.currentOriginState.ackId=setp.uint64_ackId;
 		this.currentOriginState.acknowledged=false;
 		this.currentOriginState.serverTimeSentUs=core.getTimestampUs();
-		this.sendCommand(setp);
+		this.SendCommand(setp);
 	}
 	SendNode(uid)
 	{
@@ -253,12 +262,11 @@ class Client {
 	{
 		if(origin_node_uid==0)
 			return;
-		if(this.setupCommand.startTimestamp_utc_unix_us==0)
-			return ;
 		if(this.currentOriginState.originClientHas==origin_node_uid)
 			return;
 		// It's a different origin. So we reset the time sent.
 		this.currentOriginState.serverTimeSentUs=BigInt(0);
+		this.currentOriginState.originClientHas=origin_node_uid;
 	}
 }
 

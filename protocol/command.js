@@ -119,6 +119,9 @@ class SetOriginNodeCommand extends AckedCommand
 	{
 		return AckedCommand.sizeof()+16;
 	}
+    size(){
+        return SetOriginNodeCommand.sizeof();
+    }
 };
 
-module.exports= {Command,CommandPayloadType,SetupCommand,AcknowledgeHandshakeCommand};
+module.exports= {Command,CommandPayloadType,SetupCommand,AcknowledgeHandshakeCommand,SetOriginNodeCommand};

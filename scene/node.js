@@ -108,6 +108,7 @@ class MeshComponent extends Component
 		super();
 		this.skeletonNodeID=0;
 		this.renderState = new RenderState();
+		this.url="";
     }
 	getType() {
 		return NodeDataType.Mesh;
@@ -117,7 +118,7 @@ class MeshComponent extends Component
 		byteOffset=core.put_uint64(dataView,byteOffset,this.skeletonNodeID);
 
 		var num_joint_indices=0;
-		byteOffset=put_uint64(dataView,byteOffset,num_joint_indices);
+		byteOffset=core.put_uint64(dataView,byteOffset,num_joint_indices);
 		for (var i =0;i<num_joint_indices;i++)
 		{
 			var index=this.joint_indices[i];
@@ -125,22 +126,22 @@ class MeshComponent extends Component
 		}
 
 		var num_animations=0;
-		byteOffset=put_uint64(dataView,byteOffset,num_animations);
+		byteOffset=core.put_uint64(dataView,byteOffset,num_animations);
 		for (var i =0;i<num_animations;i++)
 		{
-			byteOffset=put_uint64(dataView,byteOffset,this.animations[i]);
+			byteOffset=core.put_uint64(dataView,byteOffset,this.animations[i]);
 		}
 		// If the node's priority is less than the *client's* minimum, we don't want
 		// to send its mesh.
 		if (this.data_type == nd.NodeDataType.Mesh)
 		{
-			byteOffset=put_uint64(dataView,byteOffset,num_materials);
+			byteOffset=core.put_uint64(dataView,byteOffset,num_materials);
 			for (var i =0;i<num_materials;i++)
 			{
-				byteOffset=put_uint64(dataView,byteOffset,this.materials[i]);
+				byteOffset=core.put_uint64(dataView,byteOffset,this.materials[i]);
 			}
-			byteOffset=put_vec4(dataView,byteOffset,this.renderState.lightmapScaleOffset);
-			byteOffset=put_uint64(dataView,byteOffset,this.renderState.globalIlluminationUid);
+			byteOffset=core.put_vec4(dataView,byteOffset,this.renderState.lightmapScaleOffset);
+			byteOffset=core.put_uint64(dataView,byteOffset,this.renderState.globalIlluminationUid);
 		}
 		return byteOffset;
 	}
@@ -158,10 +159,10 @@ class SkeletonComponent extends Component
 
 class Node
 {
-    constructor(uid)
+    constructor(uid,name="")
     {
 		this.uid=uid;
-		this.name= "";
+		this.name=name;
 		this.pose=new Pose();
 		this.parent_uid=0;
 		this.data_type=NodeDataType.None;
@@ -179,6 +180,17 @@ class Node
     size() {
         return Node.sizeof();
     }
+	setMeshComponent(mesh_url){
+		this.components.forEach(component => {
+			if(component.getType()==NodeDataType.Mesh){
+				component.meshUrl=mesh_url;
+				return;
+			}
+		});
+		var m=new MeshComponent();
+		m.meshUrl=mesh_url;
+		this.components.push(m);
+	}
 	encodeIntoDataView(dataView,byteOffset) {
 		byteOffset=core.put_uint8(dataView,byteOffset,core.GeometryPayloadType.Node);
 

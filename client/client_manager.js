@@ -50,7 +50,7 @@ class ClientManager
 			var sigCli=signaling.signalingClients[clientID];
 			var sigSend=sigCli.sendToClient.bind(sigCli);
 			var c=new client.Client(clientID,sigSend);
-			c.origin_uid=origin_uid;
+			c.setOrigin(origin_uid);
 			if(this.clients.size==0)
 				this.StartStreaming();
             this.clients.set(clientID,c);
