@@ -1,8 +1,9 @@
 'use strict';
 // using https://github.com/infusion/BitSet.js
 const bit=require("bitset");
-const core=require("../protocol/core.js");
+const core=require("../core/core.js");
 const nd=require("../scene/node.js");
+const { forEach } = require("underscore");
 
 var clientIDToIndex=new Map();
 var nextIndex=0;
@@ -120,6 +121,64 @@ class GeometryService
 		// MAY not be in this set:
 		this.streamedNodes.delete(uid);
 	}
+	
+	AddMeshComponentResources(meshComponent,diff)
+	{
+		if (meshComponent.getType() != nd.NodeDataType.Mesh)
+		{
+			return;
+		}
+		if(meshComponent.data_uid==0)
+		{
+			return;
+		}
+		this.streamedMeshes[meshComponent.data_uid]+=diff;
+		//meshNode.skeletonID = node.skeletonNodeID;
+
+		//Get joint/bone IDs, if the skeletonID is not zero.
+		if (meshComponent.data_uid != 0 && meshComponent.data_type == nd.NodeDataType.Skeleton)
+		{
+			var skeleton = geometryStore.getSkeleton(meshComponent.data_uid, getClientAxesStandard());
+			for(var uid of skeleton.boneIDs)
+			{
+			}
+		}
+		if(meshComponent.renderState.globalIlluminationUid != BigInt(0))
+		{
+			this.streamedTextures[meshComponent.renderState.globalIlluminationUid]+=diff;
+		}
+	}
+
+	AddNodeResources(node)
+	{
+		/*for(var anim_uid of node.animations)
+		{
+			this.streamedAnimations[anim_uid]+=diff;
+		}*/
+		for (const material_uid of node.materials)
+		{
+			var thisMaterial = geometryStore.getMaterial(material_uid);
+			if (!thisMaterial)
+			{
+				continue;
+			}
+			this.streamedMaterials[material_uid]+=diff;
+
+			var texture_uids =
+			[
+				thisMaterial.baseColorTexture.index,
+				thisMaterial.metallicRoughnessTexture.index,
+				thisMaterial.emissiveTexture.index,
+				thisMaterial.normalTexture.index,
+				thisMaterial.occlusionTexture.index
+			];
+			for(const tex_uid of texture_uids)
+			{
+				if(tex_uid!=0)
+					this.streamedTextures[tex_uid]+=diff;
+			}
+		}
+	}
 	AddOrRemoveNodeAndResources(node_uid, remove)
 	{
 		var diff=remove?-1:1;
@@ -132,100 +191,71 @@ class GeometryService
 			return;
 		}
 		var node = this.scene.GetNode(node_uid);
+		console.log("Adding node ",node.name," for client ",this.clientID);
 		this.streamedNodes.set(node_uid,this.streamedNodes.get(node_uid)+diff);
-		
+		var meshResources=[];
 		//std.vector<MeshNodeResources> meshResources;
-		switch (node.data_type)
-		{
-			case nd.NodeDataType.None:
-			case NodeDataType.Light:
-				break;
-			case NodeDataType.Skeleton:
+		node.components.forEach(component => {
+			switch (component.getType())
 			{
-				//GetSkeletonNodeResources(node_uid, *node, meshResources);
-			}
-			break;
-			case NodeDataType.Mesh:
+				case nd.NodeDataType.None:
+				case nd.NodeDataType.Light:
+					break;
+				case nd.NodeDataType.Skeleton:
 				{
-					var meshResources=GetMeshNodeResources(node_uid, node );
-					if(node.renderState.globalIlluminationUid>0)
+					//GetSkeletonNodeResources(node_uid, *node, meshResources);
+				}
+				break;
+				case nd.NodeDataType.Mesh:
 					{
-						this.streamedTextures[node.renderState.globalIlluminationUid]+=diff;
-					}
-			
-					if(node.skeletonNodeID!=0)
-					{
-						var skeletonnode = this.scene.getNode(node.skeletonNodeID);
-						if(!skeletonnode)
+						this.AddMeshComponentResources(component,diff);
+				
+						/*if(node.skeletonNodeID!=0)
 						{
-							//TELEPORT_CERR<<"Missing skeleton node "<<node.skeletonNodeID<<std.endl;
-						}
-						else
-						{
-							this.streamedNodes[node.skeletonNodeID]+=diff;
-							meshResources=GetSkeletonNodeResources(node.skeletonNodeID, skeletonnode );
-							for(var r of meshResources)
+							var skeletonnode = this.scene.getNode(node.skeletonNodeID);
+							if(!skeletonnode)
 							{
-								for(var b of r.boneIDs)
+								//TELEPORT_CERR<<"Missing skeleton node "<<node.skeletonNodeID<<std.endl;
+							}
+							else
+							{
+								this.streamedNodes[node.skeletonNodeID]+=diff;
+								meshResources=meshResources.concat(GetSkeletonNodeResources(node.skeletonNodeID, skeletonnode ));
+								for(var r of meshResources)
 								{
-									if(b)
-										streamedNodes.set(b,streamedNodes.get(b)+diff);
+									for(var b of r.boneIDs)
+									{
+										if(b)
+											streamedNodes.set(b,streamedNodes.get(b)+diff);
+									}
 								}
+							}
+						}*/
+					}
+					break;
+				case nd.NodeDataType.TextCanvas:
+					if(node.data_uid)
+					{
+						var textCanvas=this.scene.getTextCanvas(node.data_uid);
+						if(c&&c.font_uid)
+						{
+							var fontAtlas =this.scene.getFontAtlas(c.font_uid);
+							if(f)
+							{
+								if(node.data_uid)
+									this.streamedTextCanvases[node.data_uid]+=diff;
+								if(c.font_uid)
+									this.streamedFontAtlases[c.font_uid]+=diff;
+								if(f.font_texture_uid)
+									this.streamedTextures[f.font_texture_uid]+=diff;
 							}
 						}
 					}
-				}
-				break;
-			case NodeDataType.TextCanvas:
-				if(node.data_uid)
-				{
-					var textCanvas=this.scene.getTextCanvas(node.data_uid);
-					if(c&&c.font_uid)
-					{
-						var fontAtlas =this.scene.getFontAtlas(c.font_uid);
-						if(f)
-						{
-							if(node.data_uid)
-								this.streamedTextCanvases[node.data_uid]+=diff;
-							if(c.font_uid)
-								this.streamedFontAtlases[c.font_uid]+=diff;
-							if(f.font_texture_uid)
-								this.streamedTextures[f.font_texture_uid]+=diff;
-						}
-					}
-				}
-				break;
-			default:
-				break;
-		}
-		if(meshResources)
-		for(var m of meshResources)
-		{
-			for(var u of m.animationIDs)
-			{
-				this.streamedAnimations[u]+=diff;
+					break;
+				default:
+					break;
 			}
-			for(var u of m.boneIDs)
-			{
-				this.streamedBones[u]+=diff;
-			}
-			for(var u of m.materials)
-			{
-				this.streamedMaterials[u.material_uid]+=diff;
-				for(var t of u.texture_uids)
-				{
-					this.streamedTextures[t]+=diff;
-				}
-			}
-			if(m.mesh_uid)
-			{
-				this.streamedMeshes[m.mesh_uid]+=diff;
-			}
-			if(m.skeletonAssetID)
-			{
-				this.streamedSkeletons[m.skeletonAssetID]+=diff;
-			}
-		}
+		});
 	}
 	GetNodesToStream() {
 		// We have sets/maps of what the client SHOULD have, but some of these may have been sent already.
@@ -265,7 +295,34 @@ class GeometryService
 		}
 		return this.streamedNodes;
 	}
-
+	// Get the list of meshes to stream. This is the list of meshes that we should have on the client
+	//  excluding those that have been sent.
+	GetMeshesToStream()
+	{
+		resource_uids=[];
+		this.streamedMeshes.forEach(uid => {
+			//is mesh streamed
+			if(!GeometryService.trackedResources.has(uid))
+				return;
+			var res=GeometryService.trackedResources.get(uid);
+			res.Sent(this.clientID,time_now_us);
+			if(res.WasSentToClient(this.clientID))
+			{
+				var timeSentUs=res.GetTimeSent(this.clientID);
+				// If we sent it too long ago with no acknowledgement, we can send it again.
+				if(time_now_us-timeSentUs>timeout_us)
+				{
+					res.Timeout(this.clientID);
+				}
+			}
+			else
+			{
+				// if it hasn't been sent at all to our client, we add its resources.
+				resource_uids.append(uid);
+			}
+		});
+		return resource_uids;
+	}
 	EncodedResource(resource_uid)
 	{
 		if(!GeometryService.trackedResources.has(resource_uid))

@@ -1,5 +1,5 @@
 'use strict';
-const core= require("./core");
+const core= require("../core/core.js");
 const command= require("./command");
 
 function decodeFromDataView(obj,dataView,byteOffset){

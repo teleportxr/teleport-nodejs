@@ -1,7 +1,7 @@
 'use strict';
 const fs = require('fs');
 const nd = require('../../scene/node.js');
-const core= require('../core.js');
+const core= require('../../core/core.js');
 const { error } = require('console');
 
 

@@ -1,5 +1,5 @@
 'use strict';
-const core=require("../protocol/core.js");
+const core=require("../core/core.js");
 const client=require("./client.js");
 const signaling=require("../signaling.js");
 var _ = require('underscore');

@@ -1,5 +1,5 @@
 'use strict';
-const core= require("./core.js");
+const core= require("../core/core.js");
 
 //! The payload type, or how to interpret the server's message.
 const CommandPayloadType =

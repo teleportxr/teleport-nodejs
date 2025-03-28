@@ -3,7 +3,7 @@ const getcurrentline = require("get-current-line").default;
 
 // Importing the required modules
 const WebSocketServer = require("ws");
-const core=require("./protocol/core.js");
+const core=require("./core/core.js");
 
 class SignalingState {
 	static START = new SignalingState("Start");

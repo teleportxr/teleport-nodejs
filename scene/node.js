@@ -1,5 +1,20 @@
 'use strict';
-const core= require('../protocol/core.js');
+const core= require('../core/core.js');
+const resources= require('./resources.js');
+//! The payload type, or how to interpret the server's message.
+const NodeDataType =
+{									
+	Invalid:0,		
+	None:1,
+	Mesh:2,
+	Light:3,
+	TextCanvas:4,
+	SubScene:5,
+	Skeleton:6,
+	Link:7,
+	Script:8
+};
+
 class Pose
 {
     constructor()
@@ -69,19 +84,7 @@ class PoseDynamic
 	}
 };
 
-//! The payload type, or how to interpret the server's message.
-const NodeDataType =
-{									
-	Invalid:0,		
-	None:1,
-	Mesh:2,
-	Light:3,
-	TextCanvas:4,
-	SubScene:5,
-	Skeleton:6,
-	Link:7,
-	Script:8
-};
+
 class RenderState
 {
     constructor(){
@@ -89,6 +92,7 @@ class RenderState
 		this.globalIlluminationUid=0;
     }
 }
+
 class Component {
     constructor()
 	{
@@ -98,9 +102,8 @@ class Component {
 	getType(){
 		return NodeDataType.Invalid;
 	}
-  }
-  
-  
+}
+
 class MeshComponent extends Component
 {
     constructor()
@@ -108,17 +111,21 @@ class MeshComponent extends Component
 		super();
 		this.skeletonNodeID=0;
 		this.renderState = new RenderState();
-		this.url="";
+		this.meshUrl="";
     }
 	getType() {
 		return NodeDataType.Mesh;
 	}
 	encodeIntoDataView(dataView,byteOffset) {
 		byteOffset=core.put_uint8(dataView,byteOffset,NodeDataType.Mesh);
+
+		var resuid=resources.GetResourceUidFromUrl(this.meshUrl);
+		byteOffset=core.put_uint64(dataView,byteOffset,resuid);
+
 		byteOffset=core.put_uint64(dataView,byteOffset,this.skeletonNodeID);
 
 		var num_joint_indices=0;
-		byteOffset=core.put_uint64(dataView,byteOffset,num_joint_indices);
+		byteOffset=core.put_uint16(dataView,byteOffset,num_joint_indices);
 		for (var i =0;i<num_joint_indices;i++)
 		{
 			var index=this.joint_indices[i];
@@ -126,26 +133,28 @@ class MeshComponent extends Component
 		}
 
 		var num_animations=0;
-		byteOffset=core.put_uint64(dataView,byteOffset,num_animations);
+		byteOffset=core.put_uint16(dataView,byteOffset,num_animations);
 		for (var i =0;i<num_animations;i++)
 		{
 			byteOffset=core.put_uint64(dataView,byteOffset,this.animations[i]);
 		}
 		// If the node's priority is less than the *client's* minimum, we don't want
 		// to send its mesh.
-		if (this.data_type == nd.NodeDataType.Mesh)
+		
+		var num_materials=0;
+		byteOffset=core.put_uint16(dataView,byteOffset,num_materials);
+		for (var i =0;i<num_materials;i++)
 		{
-			byteOffset=core.put_uint64(dataView,byteOffset,num_materials);
-			for (var i =0;i<num_materials;i++)
-			{
-				byteOffset=core.put_uint64(dataView,byteOffset,this.materials[i]);
-			}
-			byteOffset=core.put_vec4(dataView,byteOffset,this.renderState.lightmapScaleOffset);
-			byteOffset=core.put_uint64(dataView,byteOffset,this.renderState.globalIlluminationUid);
+			byteOffset=core.put_uint64(dataView,byteOffset,this.materials[i]);
 		}
+		byteOffset=core.put_uint64(dataView,byteOffset,12345);
+		byteOffset=core.put_vec4(dataView,byteOffset,this.renderState.lightmapScaleOffset);
+		byteOffset=core.put_uint64(dataView,byteOffset,this.renderState.globalIlluminationUid);
+		
 		return byteOffset;
 	}
 };
+
 class SkeletonComponent extends Component
 {
     constructor()
@@ -165,7 +174,6 @@ class Node
 		this.name=name;
 		this.pose=new Pose();
 		this.parent_uid=0;
-		this.data_type=NodeDataType.None;
 
 		this.holder_client_id=0;
 		this.stationary=true;
@@ -180,28 +188,24 @@ class Node
     size() {
         return Node.sizeof();
     }
-	setMeshComponent(mesh_url){
+	setMeshComponent(mesh_url) {
 		this.components.forEach(component => {
-			if(component.getType()==NodeDataType.Mesh){
+			if(component.getType()==NodeDataType.Mesh) {
 				component.meshUrl=mesh_url;
+				component.data_uid=resources.GetResourceUidFromUrl(mesh_url);
 				return;
 			}
 		});
 		var m=new MeshComponent();
 		m.meshUrl=mesh_url;
+		m.data_uid=resources.GetResourceUidFromUrl(mesh_url);
 		this.components.push(m);
 	}
 	encodeIntoDataView(dataView,byteOffset) {
 		byteOffset=core.put_uint8(dataView,byteOffset,core.GeometryPayloadType.Node);
 
 		byteOffset=core.put_uint64(dataView,byteOffset,this.uid);
-		byteOffset=core.put_uint64(dataView,byteOffset,this.name.length);
-		//Push name.
-		for(var i=0;i<this.name.length;i++) {
-			var char=this.name[i];
-			var code=char.charCodeAt(0);
-			byteOffset=core.put_uint8(dataView,byteOffset,code);
-		}
+		byteOffset=core.put_string(dataView,byteOffset,this.name);
 		var clientsidePose=this.pose;
 		//avs::ConvertTransform(serverSettings.serverAxesStandard, geometryStreamingService.getClientAxesStandard(), localTransform);
 		byteOffset=clientsidePose.encodeIntoDataView(dataView,byteOffset);

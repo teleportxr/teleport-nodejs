@@ -1,6 +1,6 @@
 'use strict';
 
-const core= require("../protocol/core");
+const core= require("../core/core.js");
 const command= require("../protocol/command.js");
 const message= require("../protocol/message.js");
 const gs= require("./geometry_service.js");
@@ -164,7 +164,11 @@ class Client {
 		for (const [uid, count] of nodes_to_stream_now_uids)
 		{
 			this.SendNode(uid);
-			//gs.GeometryService.trackedResources[uid].Sent(this.clientID,timestamp);
+		}
+		var mesh_uids=this.geometryService.GetMeshesToStream();
+		for (const uid of mesh_uids)
+		{
+			this.SendMesh(uid);
 		}
 		if(!this.currentOriginState.acknowledged)
 			this.SendOrigin();
@@ -211,6 +215,10 @@ class Client {
 		const view2 = new DataView(buffer, 0, nodeSize); 
 		console.log("Sending node "+uid+" "+node.name+" to Client "+this.clientID+", size: "+nodeSize+" bytes");
 		this.webRtcConnection.sendGeometry(view2);
+	}
+	SendMesh(uid)
+	{
+		var mesh=this.scene.GetResource(uid);
 	}
     receiveHandshake(data)
     {
