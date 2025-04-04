@@ -33,7 +33,7 @@ class Client {
 		this.next_ack_id=BigInt(1);
     }
 	tick(timestamp){
-		this.geometryService.GetNodesToStream();
+		this.geometryService.GetNodesToSend();
 	}
     streamingConnectionStateChanged(wrtcConn,newState)
     {
@@ -160,8 +160,8 @@ class Client {
 		{
 			this.geometryService.StreamNode(uid);
 		}
-		var nodes_to_stream_now_uids=this.geometryService.GetNodesToStream();
-		for (const [uid, count] of nodes_to_stream_now_uids)
+		var nodes_to_stream_now_uids=this.geometryService.GetNodesToSend();
+		for (const uid of nodes_to_stream_now_uids)
 		{
 			this.SendNode(uid);
 		}

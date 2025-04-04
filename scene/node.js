@@ -147,7 +147,6 @@ class MeshComponent extends Component
 		{
 			byteOffset=core.put_uint64(dataView,byteOffset,this.materials[i]);
 		}
-		byteOffset=core.put_uint64(dataView,byteOffset,12345);
 		byteOffset=core.put_vec4(dataView,byteOffset,this.renderState.lightmapScaleOffset);
 		byteOffset=core.put_uint64(dataView,byteOffset,this.renderState.globalIlluminationUid);
 		

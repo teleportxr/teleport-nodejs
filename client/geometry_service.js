@@ -78,7 +78,7 @@ class GeometryService
 		// lower priority nodes AND their resources are added.
 		// This is a map from the resource uid's to the number of REASONS we have to stream it.
 		//   e.g. if a texture is needed by two nodes, it should have 2 here.
-		this.streamedNodes=new Map();//map<uid,int> 
+		this.streamedNodes=new Map();
 		// Node resources are refcounted, they could be requested
 		// by more than one node, and only when no node references
 		//  them should they be removed.
@@ -111,15 +111,17 @@ class GeometryService
 		this.nodesToStreamEventually.add(uid);
 	}
 	UnstreamNode(uid) {
-		if(!GeometryService.trackedResources.has(uid))
-			return;
-		var res=GeometryService.trackedResources.get(uid);
 		var index=clientIDToIndex.get(this.clientID);
-		res.clientNeeds.BitSet(index,false);
+		if(GeometryService.trackedResources.has(uid))
+		{
+			var res=GeometryService.trackedResources.get(uid);
+			res.clientNeeds.BitSet(index,false);
+		}
 		// Should certainly be in this set:
 		this.nodesToStreamEventually.delete(uid);
 		// MAY not be in this set:
 		this.streamedNodes.delete(uid);
+		// TODO: now reduce the counts for all the dependent resources.
 	}
 	
 	AddMeshComponentResources(meshComponent,diff)
@@ -194,7 +196,6 @@ class GeometryService
 		console.log("Adding node ",node.name," for client ",this.clientID);
 		this.streamedNodes.set(node_uid,this.streamedNodes.get(node_uid)+diff);
 		var meshResources=[];
-		//std.vector<MeshNodeResources> meshResources;
 		node.components.forEach(component => {
 			switch (component.getType())
 			{
@@ -257,21 +258,56 @@ class GeometryService
 			}
 		});
 	}
-	GetNodesToStream() {
-		// We have sets/maps of what the client SHOULD have, but some of these may have been sent already.
-		let time_now_us=core.getTimestampUs();
+	/*
+
+	+-------------------------------------------+
+	|	nodesToStreamEventually					|
+	|	+---------------------------+			|
+	|	|	streamedNodes			|			|
+	|	|		+---------------+	|			|
+	|	|		|  nodesToSend	|	|			|
+	|	|		+---------------+	|			|
+	|	+---------------------------+			|
+	+-------------------------------------------+
+
+	*/
+
+	UpdateNodesToStream()
+	{
 		// ten seconds for timeout. Tweak this.
 		const timeout_us=10000000;
 		//  The set of ALL the nodes of sufficient priority that the client NEEDS is streamedNodes.
 		for(let uid of this.nodesToStreamEventually)
 		{
+			// If it's not in the global tracked resources list, we can't stream it.
 			if(!GeometryService.trackedResources.has(uid))
 				continue;
-			var res=GeometryService.trackedResources.get(uid);
 			// The client eventually should need this node.
-			// But if was already received we don't send it:
+			// But is it already in the streamed list?
+			if(this.streamedNodes.has(uid))
+			{
+				// no need to add it.
+				continue;
+			}
+			// if it hasn't been sent at all to our client, we add its resources.
+			this.AddOrRemoveNodeAndResources(uid,false);
+		}
+	}
+	//! Nodes to send this frame: of the streamedNodes, which have not been sent,
+	//!   or were sent a while ago and never acknowledged?
+	GetNodesToSend() {
+		this.UpdateNodesToStream();
+		var nodesToSend=[];
+		// We have sets/maps of what the client SHOULD have, but some of these may have been sent already.
+		let time_now_us=core.getTimestampUs();
+		for(const [uid, count] of this.streamedNodes)
+		{
+			var res=GeometryService.trackedResources.get(uid);
+			// If it was already received we don't send it:
 			if(res.WasAcknowledgedByClient(this.clientID))
 				continue;
+			// But what if it was sent to the client, and not yet acknowledged?
+			//  depends how long ago.
 			if(res.WasSentToClient(this.clientID))
 			{
 				var timeSentUs=res.GetTimeSent(this.clientID);
@@ -285,21 +321,16 @@ class GeometryService
 					continue;
 				}
 			}
-			else
-			{
-				// if it hasn't been sent at all to our client, we add its resources.
-				this.AddOrRemoveNodeAndResources(uid,false);
-			}
-			this.streamedNodes.set(uid,time_now_us);
+			nodesToSend.push(uid);
 			res.Sent(this.clientID,time_now_us);
 		}
-		return this.streamedNodes;
+		return nodesToSend;
 	}
 	// Get the list of meshes to stream. This is the list of meshes that we should have on the client
 	//  excluding those that have been sent.
 	GetMeshesToStream()
 	{
-		resource_uids=[];
+		var resource_uids=[];
 		this.streamedMeshes.forEach(uid => {
 			//is mesh streamed
 			if(!GeometryService.trackedResources.has(uid))
@@ -318,7 +349,7 @@ class GeometryService
 			else
 			{
 				// if it hasn't been sent at all to our client, we add its resources.
-				resource_uids.append(uid);
+				resource_uids.push(uid);
 			}
 		});
 		return resource_uids;

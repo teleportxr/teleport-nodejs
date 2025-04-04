@@ -94,6 +94,14 @@ class ClientManager
 		c.Start();
 		return c;
 	}
+	writeState() {
+		var content="";
+		for (let [cl_id,cl] of this.clients) {
+			var sigCli=signaling.signalingClients[cl_id];
+			content=content+"Client "+cl_id+" " + sigCli.ip + " " + sigCli.signalingState + "<br>";
+		};
+		return content;
+	}
 }
 
 exports.getInstance=()=>
