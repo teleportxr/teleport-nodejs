@@ -192,6 +192,8 @@ const GeometryPayloadType =
 	FontAtlas: 8,
 	TextCanvas: 9,
 	TexturePointer: 10,
+	MeshPointer: 11,
+	MaterialPointer: 12,
 };
 
 class DisplayInfo {
@@ -425,7 +427,7 @@ function put_vec4(dataView, byteOffset, value) {
 
 //! Insert a string to the dataView.
 function put_string(dataView, byteOffset, name) {
-	byteOffset = put_uint64(dataView, byteOffset, name.length);
+	byteOffset = put_uint16(dataView, byteOffset, name.length);
 	//Push name.
 	for (var i = 0; i < name.length; i++) {
 		var char = name[i];

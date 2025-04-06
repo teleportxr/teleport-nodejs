@@ -3,6 +3,7 @@
 const bit=require("bitset");
 const core=require("../core/core.js");
 const nd=require("../scene/node.js");
+const resources=require("../scene/resources.js");
 const { forEach } = require("underscore");
 
 var clientIDToIndex=new Map();
@@ -19,12 +20,11 @@ var nextIndex=0;
 //! We remove these values when no longer needed, to prevent the maps from getting too large.
 class TrackedResource
 {
-    constructor(){
+    constructor() {
         this.clientNeeds=new bit.BitSet();		    // whether we THINK the client NEEDS the resource.
         this.sent=new bit.BitSet();			        // Whether we have actually sent the resource,
         this.sent_server_time_us=new Map(); 		// and when we sent it. Map of clientID to timestamp.
-        this.acknowledged=new bit.BitSet();	        // Whether the client acknowledged receiving the resource.
-		
+        this.acknowledged=new bit.BitSet();	        // Whether the client acknowledged receiving the resource.		
     }
 	IsNeededByClient(clientID) {
 		return this.clientNeeds.get[clientIDToIndex[clientID]];
@@ -90,21 +90,28 @@ class GeometryService
 		this.streamedAnimations=new Map();
 		this.streamedTextCanvases=new Map();
 		this.streamedFontAtlases=new Map();
+
+		this.backgroundTextureUid=0;
     }
-	SetScene(sc){
+	SetScene(sc) {
 		this.scene=sc;
 	}
-	SetOriginNode(n_uid){
+	SetOriginNode(n_uid) {
 		if(this.originNodeId ==n_uid)
 			return;
 		this.originNodeId = n_uid;-
 		this.StreamNode(n_uid);
 	}
-	StreamNode(uid) {
-		// this client should stream node uid.
+	static GetOrCreateTrackedResource(uid)
+	{
 		if(!GeometryService.trackedResources.has(uid))
 			GeometryService.trackedResources.set(uid,new TrackedResource());
 		var res=GeometryService.trackedResources.get(uid);
+		return res;
+	}
+	StreamNode(uid) {
+		// this client should stream node uid.
+		var res=GeometryService.GetOrCreateTrackedResource(uid);
 		var index=clientIDToIndex.get(this.clientID);
 		res.clientNeeds.set(index,true);
 		// Add to the list of nodes this client should eventually receive:
@@ -114,7 +121,7 @@ class GeometryService
 		var index=clientIDToIndex.get(this.clientID);
 		if(GeometryService.trackedResources.has(uid))
 		{
-			var res=GeometryService.trackedResources.get(uid);
+			var res=GeometryService.GetOrCreateTrackedResource(uid);
 			res.clientNeeds.BitSet(index,false);
 		}
 		// Should certainly be in this set:
@@ -134,7 +141,7 @@ class GeometryService
 		{
 			return;
 		}
-		this.streamedMeshes[meshComponent.data_uid]+=diff;
+		this.streamedMeshes.set(meshComponent.data_uid,this.streamedMeshes.get(meshComponent.data_uid)+diff);
 		//meshNode.skeletonID = node.skeletonNodeID;
 
 		//Get joint/bone IDs, if the skeletonID is not zero.
@@ -147,7 +154,7 @@ class GeometryService
 		}
 		if(meshComponent.renderState.globalIlluminationUid != BigInt(0))
 		{
-			this.streamedTextures[meshComponent.renderState.globalIlluminationUid]+=diff;
+			this.streamedTextures.set(meshComponent.renderState.globalIlluminationUid,this.streamedTextures.get(meshComponent.renderState.globalIlluminationUid)+diff);
 		}
 	}
 
@@ -164,7 +171,7 @@ class GeometryService
 			{
 				continue;
 			}
-			this.streamedMaterials[material_uid]+=diff;
+			this.streamedMaterials.set(material_uid,this.streamedMaterials.get(material_uid)+diff);
 
 			var texture_uids =
 			[
@@ -177,24 +184,27 @@ class GeometryService
 			for(const tex_uid of texture_uids)
 			{
 				if(tex_uid!=0)
-					this.streamedTextures[tex_uid]+=diff;
+					this.streamedTextures.set(tex_uid,this.streamedTextures.get(tex_uid)+diff);
 			}
 		}
 	}
-	AddOrRemoveNodeAndResources(node_uid, remove)
+	AddOrRemoveNodeAndResources(node_uid, diff)
 	{
-		var diff=remove?-1:1;
-		if(!this.streamedNodes.has(node_uid))
+		var already_present=false;
+		var old_count=0;
+		if(this.streamedNodes.has(node_uid))
+	 	{
+			already_present=true;
+			old_count=this.streamedNodes.get(node_uid);
+		}
+		else
 		{
 			this.streamedNodes.set(node_uid,0);
 		}
-		else if(!remove)
-		{
-			return;
-		}
+
 		var node = this.scene.GetNode(node_uid);
 		console.log("Adding node ",node.name," for client ",this.clientID);
-		this.streamedNodes.set(node_uid,this.streamedNodes.get(node_uid)+diff);
+		this.streamedNodes.set(node_uid,old_count+diff);
 		var meshResources=[];
 		node.components.forEach(component => {
 			switch (component.getType())
@@ -244,11 +254,11 @@ class GeometryService
 							if(f)
 							{
 								if(node.data_uid)
-									this.streamedTextCanvases[node.data_uid]+=diff;
+									this.streamedTextCanvases.set(f.data_uid,this.streamedTextCanvases.get(f.data_uid)+diff);
 								if(c.font_uid)
-									this.streamedFontAtlases[c.font_uid]+=diff;
+									this.streamedFontAtlases.set(f.font_uid,this.streamedFontAtlases.get(f.font_uid)+diff);
 								if(f.font_texture_uid)
-									this.streamedTextures[f.font_texture_uid]+=diff;
+									this.streamedTextures.set(f.font_texture_uid,this.streamedTextures.get(f.font_texture_uid)+diff);
 							}
 						}
 					}
@@ -290,19 +300,41 @@ class GeometryService
 				continue;
 			}
 			// if it hasn't been sent at all to our client, we add its resources.
-			this.AddOrRemoveNodeAndResources(uid,false);
+			this.AddOrRemoveNodeAndResources(uid,1);
 		}
 	}
-	//! Nodes to send this frame: of the streamedNodes, which have not been sent,
-	//!   or were sent a while ago and never acknowledged?
-	GetNodesToSend() {
-		this.UpdateNodesToStream();
-		var nodesToSend=[];
+	AddOrRemoveTexture(thisTextureUid,diff){
+		if(thisTextureUid==BigInt(0))
+			return;
+		if(thisTextureUid==0)
+			return;
+		if(this.streamedTextures.has(thisTextureUid))
+	 	{
+			
+		}
+		else
+		{
+			this.streamedTextures.set(thisTextureUid,0);
+		}
+		this.streamedTextures.set(thisTextureUid,this.streamedTextures.get(thisTextureUid)+diff);
+	}
+
+	UpdateTexturesToStream() {
+		// scene background?
+		var bg_uid=resources.GetResourceUidFromUrl(core.GeometryPayloadType.TexturePointer,this.scene.backgroundTexturePath);
+		if(this.backgroundTextureUid!=bg_uid) {
+			this.AddOrRemoveTexture(this.backgroundTextureUid,-1);
+			this.backgroundTextureUid = bg_uid;
+			this.AddOrRemoveTexture(this.backgroundTextureUid,1);
+		}
+	}
+	GetResourcesToSend(resourcePool) {
+		var toSend=[];
 		// We have sets/maps of what the client SHOULD have, but some of these may have been sent already.
 		let time_now_us=core.getTimestampUs();
-		for(const [uid, count] of this.streamedNodes)
+		for(const [uid, count] of resourcePool)
 		{
-			var res=GeometryService.trackedResources.get(uid);
+			var res=GeometryService.GetOrCreateTrackedResource(uid);
 			// If it was already received we don't send it:
 			if(res.WasAcknowledgedByClient(this.clientID))
 				continue;
@@ -321,11 +353,23 @@ class GeometryService
 					continue;
 				}
 			}
-			nodesToSend.push(uid);
+			toSend.push(uid);
 			res.Sent(this.clientID,time_now_us);
 		}
-		return nodesToSend;
+		return toSend;
 	}
+
+	//! Nodes to send this frame: of the streamedNodes, which have not been sent,
+	//!   or were sent a while ago and never acknowledged?
+	GetNodesToSend() {
+		this.UpdateNodesToStream();
+		return this.GetResourcesToSend(this.streamedNodes);
+	}
+	GetTexturesToSend(){
+		this.UpdateTexturesToStream();
+		return this.GetResourcesToSend(this.streamedTextures);
+	}
+
 	// Get the list of meshes to stream. This is the list of meshes that we should have on the client
 	//  excluding those that have been sent.
 	GetMeshesToStream()
@@ -335,7 +379,7 @@ class GeometryService
 			//is mesh streamed
 			if(!GeometryService.trackedResources.has(uid))
 				return;
-			var res=GeometryService.trackedResources.get(uid);
+			var res=GeometryService.GetOrCreateTrackedResource(uid);
 			res.Sent(this.clientID,time_now_us);
 			if(res.WasSentToClient(this.clientID))
 			{
@@ -358,7 +402,7 @@ class GeometryService
 	{
 		if(!GeometryService.trackedResources.has(resource_uid))
 			return;
-		var res=GeometryService.trackedResources.get(resource_uid);
+		var res=GeometryService.GetOrCreateTrackedResource(resource_uid);
 		if(res) {
 			let time_now_us=core.getTimestampUs();
 			res.Sent(this.clientID,time_now_us);
@@ -368,7 +412,7 @@ class GeometryService
 	{
 		if(!GeometryService.trackedResources.has(resource_uid))
 			return;
-		var res=GeometryService.trackedResources.get(resource_uid);
+		var res=GeometryService.GetOrCreateTrackedResource(resource_uid);
 		if(res) {
 			res.AcknowledgeBy(this.clientID);
 		}

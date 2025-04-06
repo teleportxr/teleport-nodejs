@@ -119,7 +119,7 @@ class MeshComponent extends Component
 	encodeIntoDataView(dataView,byteOffset) {
 		byteOffset=core.put_uint8(dataView,byteOffset,NodeDataType.Mesh);
 
-		var resuid=resources.GetResourceUidFromUrl(this.meshUrl);
+		var resuid=resources.GetResourceUidFromUrl(core.GeometryPayloadType.MeshPointer,this.meshUrl);
 		byteOffset=core.put_uint64(dataView,byteOffset,resuid);
 
 		byteOffset=core.put_uint64(dataView,byteOffset,this.skeletonNodeID);
@@ -191,13 +191,13 @@ class Node
 		this.components.forEach(component => {
 			if(component.getType()==NodeDataType.Mesh) {
 				component.meshUrl=mesh_url;
-				component.data_uid=resources.GetResourceUidFromUrl(mesh_url);
+				component.data_uid=resources.GetResourceUidFromUrl(core.GeometryPayloadType.MeshPointer,mesh_url);
 				return;
 			}
 		});
 		var m=new MeshComponent();
 		m.meshUrl=mesh_url;
-		m.data_uid=resources.GetResourceUidFromUrl(mesh_url);
+		m.data_uid=resources.GetResourceUidFromUrl(core.GeometryPayloadType.MeshPointer,mesh_url);
 		this.components.push(m);
 	}
 	encodeIntoDataView(dataView,byteOffset) {

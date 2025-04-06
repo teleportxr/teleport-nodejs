@@ -95,11 +95,12 @@ class ClientManager
 		return c;
 	}
 	writeState() {
-		var content="";
+		var content="<table><tr><th>Client Id</th><th>IP Address</th><th>Signalling State</th></tr>";
 		for (let [cl_id,cl] of this.clients) {
 			var sigCli=signaling.signalingClients[cl_id];
-			content=content+"Client "+cl_id+" " + sigCli.ip + " " + sigCli.signalingState + "<br>";
+			content+="\n<tr><td>"+cl_id+"</td> <td>" + sigCli.ip + "</td> <td>" + sigCli.signalingState + "</td></tr>";
 		};
+		content+="\n</table>";
 		return content;
 	}
 }

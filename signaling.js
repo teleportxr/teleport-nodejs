@@ -156,7 +156,8 @@ function receiveWebSocketsMessage(clientID, signalingClient, txt) {
     else
     {
         var webRtcConnection = webRtcConnectionManager.getConnection(clientID);
-        webRtcConnection.receiveStreamingControlMessage(txt);
+		if(webRtcConnection)
+	        webRtcConnection.receiveStreamingControlMessage(txt);
     }
 }
 function OnWebSocket(ws, req) {

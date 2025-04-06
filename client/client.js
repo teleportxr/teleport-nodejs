@@ -5,7 +5,9 @@ const command= require("../protocol/command.js");
 const message= require("../protocol/message.js");
 const gs= require("./geometry_service.js");
 const node_encoder= require("../protocol/encoders/node_encoder.js");
+const resource_encoder= require("../protocol/encoders/resource_encoder.js");
 const WebRtcConnectionManager = require('../connections/webrtcconnectionmanager');
+const resources= require("../scene/resources.js");
 
 
 class OriginState
@@ -170,6 +172,11 @@ class Client {
 		{
 			this.SendMesh(uid);
 		}
+		var textures_to_send_now_uids=this.geometryService.GetTexturesToSend();
+		for (const uid of textures_to_send_now_uids)
+		{
+			this.SendTexture(uid);
+		}
 		if(!this.currentOriginState.acknowledged)
 			this.SendOrigin();
 	}
@@ -218,8 +225,25 @@ class Client {
 	}
 	SendMesh(uid)
 	{
-		var mesh=this.scene.GetResource(uid);
+		var mesh=resources.GetResource(uid);
 	}
+	SendTexture(uid)
+	{
+		var texture=resources.GetResourceFromUid(uid);
+		if(!texture)
+		{
+			console.warn("No texture of uid ",uid," was found.")
+			return;
+		}
+		const MAX_TEXTURE_SIZE=500;
+		const buffer = new ArrayBuffer(MAX_TEXTURE_SIZE);
+		const textureSize=resource_encoder.EncodeResource(texture,buffer);
+		this.geometryService.EncodedResource(uid);
+		const view2 = new DataView(buffer, 0, textureSize); 
+		console.log("Sending texture "+uid+" "+texture.url+" to Client "+this.clientID+", size: "+textureSize+" bytes");
+		this.webRtcConnection.sendGeometry(view2);
+	}
+
     receiveHandshake(data)
     {
         if(data.length<message.HandshakeMessage.sizeof()) {
