@@ -11,15 +11,15 @@
   "scripts": {
     "start": "node server.js"
   },
-  "name": "teleport-server",
+  "name": "teleportxr",
   "description": "A minimal Teleport server on node.js",
   "version": "1.0.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/simul/teleport-nodejs.git"
   },
-  "author": "",
-  "license": "ISC",
+  "author": "rvkennedy",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/simul/teleport-nodejs/issues"
   },
@@ -30,5 +30,7 @@
 	"./client/client_manager": "./client/client_manager.js",
     "./connections/webrtcconnectionmanager": "./connections/webrtcconnectionmanager.js",
 	"./scene/scene":"./scene/scene.js"
+  },
+  "publishConfig": {
   }
 }

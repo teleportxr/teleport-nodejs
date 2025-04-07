@@ -428,7 +428,7 @@ function put_vec4(dataView, byteOffset, value) {
 //! Insert a string to the dataView.
 function put_string(dataView, byteOffset, name) {
 	byteOffset = put_uint16(dataView, byteOffset, name.length);
-	//Push name.
+	// Push name.
 	for (var i = 0; i < name.length; i++) {
 		var char = name[i];
 		var code = char.charCodeAt(0);
