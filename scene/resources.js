@@ -56,7 +56,13 @@ function GetResourceFromUid(uid)
 //! Add the texture url as a resource.
 function AddTexture(url)
 {
-	GetResourceUidFromUrl(core.GeometryPayloadType.TexturePointer,url);
+	return GetResourceUidFromUrl(core.GeometryPayloadType.TexturePointer,url);
 }
 
-module.exports = {Resource,GetResourceFromUrl,GetResourceUidFromUrl,GetResourceFromUid,AddTexture};
+//! Add the texture url as a resource.
+function AddMesh(url)
+{
+	return GetResourceUidFromUrl(core.GeometryPayloadType.MeshPointer,url);
+}
+
+module.exports = {Resource,GetResourceFromUrl,GetResourceUidFromUrl,GetResourceFromUid,AddTexture,AddMesh};

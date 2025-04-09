@@ -65,7 +65,11 @@ class Scene {
 				if (components) {
 					for (let c of components) {
 						if (c["type"] == "mesh")
-							n.setMeshComponent(c["url"]);
+						{
+							var mesh_url=c["url"];
+							resources.AddMesh(mesh_url);
+							n.setMeshComponent(mesh_url);
+						}
 					}
 				}
 			}

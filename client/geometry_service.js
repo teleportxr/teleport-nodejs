@@ -130,7 +130,22 @@ class GeometryService
 		this.streamedNodes.delete(uid);
 		// TODO: now reduce the counts for all the dependent resources.
 	}
-	
+	StreamOrUnstream(resourceMap,uid,diff)
+	{
+		if(uid==BigInt(0))
+			return;
+		if(uid==0)
+			return;
+		if(!resourceMap.has(uid))
+		{
+			resourceMap.set(uid,0);
+		}
+		resourceMap.set(uid,resourceMap.get(uid)+diff);
+	}
+	AddOrRemoveTexture(thisTextureUid,diff){
+		this.StreamOrUnstream(this.streamedTextures,thisTextureUid,diff);
+	}
+
 	AddMeshComponentResources(meshComponent,diff)
 	{
 		if (meshComponent.getType() != nd.NodeDataType.Mesh)
@@ -141,7 +156,7 @@ class GeometryService
 		{
 			return;
 		}
-		this.streamedMeshes.set(meshComponent.data_uid,this.streamedMeshes.get(meshComponent.data_uid)+diff);
+		this.StreamOrUnstream(this.streamedMeshes,meshComponent.data_uid,diff);
 		//meshNode.skeletonID = node.skeletonNodeID;
 
 		//Get joint/bone IDs, if the skeletonID is not zero.
@@ -154,7 +169,7 @@ class GeometryService
 		}
 		if(meshComponent.renderState.globalIlluminationUid != BigInt(0))
 		{
-			this.streamedTextures.set(meshComponent.renderState.globalIlluminationUid,this.streamedTextures.get(meshComponent.renderState.globalIlluminationUid)+diff);
+			this.StreamOrUnstream(this.streamedTextures,meshComponent.renderState.globalIlluminationUid,diff);
 		}
 	}
 
@@ -171,7 +186,7 @@ class GeometryService
 			{
 				continue;
 			}
-			this.streamedMaterials.set(material_uid,this.streamedMaterials.get(material_uid)+diff);
+			this.StreamOrUnstream(this.streamedMaterials,material_uid,diff);
 
 			var texture_uids =
 			[
@@ -184,7 +199,7 @@ class GeometryService
 			for(const tex_uid of texture_uids)
 			{
 				if(tex_uid!=0)
-					this.streamedTextures.set(tex_uid,this.streamedTextures.get(tex_uid)+diff);
+					this.StreamOrUnstream(this.streamedTextures,tex_uid,diff);
 			}
 		}
 	}
@@ -254,11 +269,11 @@ class GeometryService
 							if(f)
 							{
 								if(node.data_uid)
-									this.streamedTextCanvases.set(f.data_uid,this.streamedTextCanvases.get(f.data_uid)+diff);
+									this.StreamOrUnstream(this.streamedTextCanvases,f.data_uid,diff);
 								if(c.font_uid)
-									this.streamedFontAtlases.set(f.font_uid,this.streamedFontAtlases.get(f.font_uid)+diff);
+									this.StreamOrUnstream(this.streamedFontAtlases,f.font_uid,diff);
 								if(f.font_texture_uid)
-									this.streamedTextures.set(f.font_texture_uid,this.streamedTextures.get(f.font_texture_uid)+diff);
+									this.StreamOrUnstream(this.streamedTextures,f.font_texture_uid,diff);
 							}
 						}
 					}
@@ -303,22 +318,6 @@ class GeometryService
 			this.AddOrRemoveNodeAndResources(uid,1);
 		}
 	}
-	AddOrRemoveTexture(thisTextureUid,diff){
-		if(thisTextureUid==BigInt(0))
-			return;
-		if(thisTextureUid==0)
-			return;
-		if(this.streamedTextures.has(thisTextureUid))
-	 	{
-			
-		}
-		else
-		{
-			this.streamedTextures.set(thisTextureUid,0);
-		}
-		this.streamedTextures.set(thisTextureUid,this.streamedTextures.get(thisTextureUid)+diff);
-	}
-
 	UpdateTexturesToStream() {
 		// scene background?
 		var bg_uid=resources.GetResourceUidFromUrl(core.GeometryPayloadType.TexturePointer,this.scene.backgroundTexturePath);
@@ -375,10 +374,10 @@ class GeometryService
 	GetMeshesToStream()
 	{
 		var resource_uids=[];
-		this.streamedMeshes.forEach(uid => {
+		let time_now_us=core.getTimestampUs();
+		for(const [uid, count] of this.streamedMeshes)
+		 {
 			//is mesh streamed
-			if(!GeometryService.trackedResources.has(uid))
-				return;
 			var res=GeometryService.GetOrCreateTrackedResource(uid);
 			res.Sent(this.clientID,time_now_us);
 			if(res.WasSentToClient(this.clientID))
@@ -395,7 +394,7 @@ class GeometryService
 				// if it hasn't been sent at all to our client, we add its resources.
 				resource_uids.push(uid);
 			}
-		});
+		};
 		return resource_uids;
 	}
 	EncodedResource(resource_uid)

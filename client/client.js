@@ -8,6 +8,7 @@ const node_encoder= require("../protocol/encoders/node_encoder.js");
 const resource_encoder= require("../protocol/encoders/resource_encoder.js");
 const WebRtcConnectionManager = require('../connections/webrtcconnectionmanager');
 const resources= require("../scene/resources.js");
+const { BackgroundMode } = require("../core/core.js");
 
 
 class OriginState
@@ -110,6 +111,14 @@ class Client {
     Start()
     {
         this.setupCommand=new command.SetupCommand();
+		if(this.scene)
+		{
+			if(this.scene.backgroundTexturePath&&this.scene.backgroundTexturePath!="")
+			{
+				this.setupCommand.BackgroundMode_backgroundMode=BackgroundMode.TEXTURE;
+				this.setupCommand.uid_backgroundTexture=resources.AddTexture(this.scene.backgroundTexturePath);
+			}
+		}
         this.SendCommand(this.setupCommand);
     }
     SendCommand(command){
@@ -223,27 +232,30 @@ class Client {
 		console.log("Sending node "+uid+" "+node.name+" to Client "+this.clientID+", size: "+nodeSize+" bytes");
 		this.webRtcConnection.sendGeometry(view2);
 	}
+	SendGenericResource(uid)
+	{
+		var resource=resources.GetResourceFromUid(uid);
+		if(!resource)
+		{
+			console.warn("No resource of uid ",uid," was found.")
+			return;
+		}
+		const MAX_BUFFER_SIZE=500;
+		const buffer = new ArrayBuffer(MAX_BUFFER_SIZE);
+		const resourceSize=resource_encoder.EncodeResource(resource,buffer);
+		this.geometryService.EncodedResource(uid);
+		const view2 = new DataView(buffer, 0, resourceSize); 
+		console.log("Sending resource "+uid+" "+resource.url+" to Client "+this.clientID+", size: "+resourceSize+" bytes");
+		this.webRtcConnection.sendGeometry(view2);
+	}
 	SendMesh(uid)
 	{
-		var mesh=resources.GetResource(uid);
+		this.SendGenericResource(uid);
 	}
 	SendTexture(uid)
 	{
-		var texture=resources.GetResourceFromUid(uid);
-		if(!texture)
-		{
-			console.warn("No texture of uid ",uid," was found.")
-			return;
-		}
-		const MAX_TEXTURE_SIZE=500;
-		const buffer = new ArrayBuffer(MAX_TEXTURE_SIZE);
-		const textureSize=resource_encoder.EncodeResource(texture,buffer);
-		this.geometryService.EncodedResource(uid);
-		const view2 = new DataView(buffer, 0, textureSize); 
-		console.log("Sending texture "+uid+" "+texture.url+" to Client "+this.clientID+", size: "+textureSize+" bytes");
-		this.webRtcConnection.sendGeometry(view2);
+		this.SendGenericResource(uid);
 	}
-
     receiveHandshake(data)
     {
         if(data.length<message.HandshakeMessage.sizeof()) {
