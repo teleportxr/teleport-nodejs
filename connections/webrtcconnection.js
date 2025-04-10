@@ -1,8 +1,8 @@
 'use strict';
 
 const EventEmitter = require('events');
-const wrtc =require('wrtc');
-const DefaultRTCPeerConnection = require('wrtc').RTCPeerConnection;
+const wrtc =require('@roamhq/wrtc');
+const DefaultRTCPeerConnection = require('@roamhq/wrtc').RTCPeerConnection;
 
 const TIME_TO_CONNECTED = 10000;
 const TIME_TO_HOST_CANDIDATES = 3000;  // NOTE: Too long.
