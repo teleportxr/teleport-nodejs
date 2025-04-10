@@ -13,7 +13,7 @@
   },
   "name": "teleportxr",
   "description": "A minimal Teleport server on node.js",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/simul/teleport-nodejs.git"
