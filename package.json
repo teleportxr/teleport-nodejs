@@ -5,7 +5,7 @@
     "microtime": "^3.1.1",
     "underscore": "^1.13.7",
     "uuid": "^9.0.1",
-    "wrtc": "^0.4.7",
+    "@roamhq/wrtc": "^0.8.0",
     "ws": "^8.13.0"
   },
   "scripts": {
@@ -13,7 +13,7 @@
   },
   "name": "teleportxr",
   "description": "A minimal Teleport server on node.js",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/simul/teleport-nodejs.git"
