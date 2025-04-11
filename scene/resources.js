@@ -9,6 +9,11 @@ class Resource
 	//! One trackedResources shared acrosss all clients.
 	static resourcesByUid=new Map();
 	static pathToUid=new Map();
+	static defaultPathRoot="http://localhost";
+	static SetDefaultPathRoot(str)
+	{
+		Resource.defaultPathRoot=str;
+	}
     constructor(type,uid,url)
     {
 		this.uid=uid;
@@ -18,7 +23,10 @@ class Resource
 	encodeIntoDataView(dataView,byteOffset) {
 		byteOffset=core.put_uint8(dataView,byteOffset,this.type);
 		byteOffset=core.put_uint64(dataView,byteOffset,this.uid);
-		byteOffset=core.put_string(dataView,byteOffset,this.url);
+		var url=this.url;
+		if(this.url.search("://")==-1)
+			url=Resource.defaultPathRoot+this.url;
+		byteOffset=core.put_string(dataView,byteOffset,url);
 		return byteOffset;
 	}
 }

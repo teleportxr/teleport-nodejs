@@ -13,7 +13,7 @@
   },
   "name": "teleportxr",
   "description": "Teleport Spatial Server on node.js",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/simul/teleport-nodejs.git"
@@ -29,7 +29,8 @@
 	"./signaling": "./signaling.js",
 	"./client/client_manager": "./client/client_manager.js",
     "./connections/webrtcconnectionmanager": "./connections/webrtcconnectionmanager.js",
-	"./scene/scene":"./scene/scene.js"
+	"./scene/scene":"./scene/scene.js",
+	"./scene/resources":"./scene/resources.js"
   },
   "publishConfig": {
   }

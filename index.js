@@ -3,11 +3,11 @@ const WebRtcConnectionManager	= require('./connections/webrtcconnectionmanager.j
 const signaling					=require("./signaling.js");
 const client_manager 			= require('./client/client_manager.js');
 
-function initServer(http_server) {
+function initServer(signaling_port) {
 	var cm=client_manager.getInstance();
 	const webRtcConnectionManager = WebRtcConnectionManager.getInstance();
 	webRtcConnectionManager.SetSendConfigMessage(signaling.sendConfigMessage);
-	signaling.init(webRtcConnectionManager,cm.newClient.bind(cm),http_server);
+	return signaling.init(webRtcConnectionManager,cm.newClient.bind(cm),signaling_port);
   }
   
   module.exports = {initServer}
