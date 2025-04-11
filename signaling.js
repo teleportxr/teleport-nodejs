@@ -216,7 +216,7 @@ function OnWebSocket(ws, req) {
 }
 exports.init = function (webRtcCM,newClientFn) {
 	// Creating a new websocket server
-	signaling_port = process.env.PORT || 8081;
+	const signaling_port = process.env.PORT || 8081;
 	const wss = new WebSocketServer.Server({ port: signaling_port });
 	webRtcConnectionManager = webRtcCM;
 	newClient=newClientFn;
