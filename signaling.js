@@ -214,17 +214,17 @@ function OnWebSocket(ws, req) {
 		console.log("Some Error occurred");
 	};
 }
-exports.init = function (webRtcCM,newClientFn) {
+exports.init = function (webRtcCM, newClientFn, http_server) {
 	// Creating a new websocket server
-	const signaling_port = process.env.PORT || 8081;
-	const wss = new WebSocketServer.Server({ port: signaling_port });
+	// const signaling_port = process.env.PORT || 8081;
+	const wss = new WebSocketServer.Server({ http_server });
 	webRtcConnectionManager = webRtcCM;
 	newClient=newClientFn;
 	// Creating connection using websocket
 	wss.on("connection", (ws, req) => {
 		OnWebSocket(ws, req);
 	});
-	console.log("The WebSockets Signaling Server is running on port " + wss.options.port);
+	console.log("The WebSockets Signaling Server is running on port " + JSON.stringify(wss.options));
 };
 exports.sendConfigMessage = function (clientID, msg) {
     // Test: is this message valid json?
