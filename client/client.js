@@ -130,7 +130,7 @@ class Client {
     {
 		this.webRtcConnectionManager=WebRtcConnectionManager.getInstance();
         // We make sure WebRTC has a connection for this client.
-  		this.webRtcConnection = this. webRtcConnectionManager.createConnection(
+  		this.webRtcConnection = this.webRtcConnectionManager.createConnection(
 										this.clientID
 										,this.streamingConnectionStateChanged.bind(this)
 										,this.receivedMessageReliable.bind(this)

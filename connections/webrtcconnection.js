@@ -6,7 +6,7 @@ const DefaultRTCPeerConnection = require('@roamhq/wrtc').RTCPeerConnection;
 
 const TIME_TO_CONNECTED = 10000;
 const TIME_TO_HOST_CANDIDATES = 3000;  // NOTE: Too long.
-const TIME_TO_RECONNECTED = 10000;
+const TIME_TO_RECONNECTED = 1000;
 
 function EVEN_ID(id) {
     return (id-(id%2))
@@ -22,7 +22,7 @@ class WebRtcConnection extends EventEmitter
 		this.id = id;
 		this.state = 'open';
 
-		options = {
+		this.options = {
 			RTCPeerConnection: DefaultRTCPeerConnection,
 			clearTimeout,
 			setTimeout,
@@ -38,75 +38,110 @@ class WebRtcConnection extends EventEmitter
 			timeToReconnected
 		} = options;
 
-		this.connectionStateChanged	=options.connectionStateChanged;
+		this.connectionStateChanged			=options.connectionStateChanged;
 		this.messageReceivedReliableCb		=options.messageReceivedReliable;
 		this.messageReceivedUnreliableCb	=options.messageReceivedUnreliable;
 		
 		this.sendConfigMessage		=options.sendConfigMessage;
-		const peerConnection		=new RTCPeerConnection({ sdpSemantics: 'unified-plan'});
-        this.pc						=peerConnection;
+
+
+		Object.defineProperties(this, {
+			iceConnectionState: {
+				get ()
+				{
+					return this.peerConnection.iceConnectionState;
+				}
+			},
+			localDescription: {
+				get ()
+				{
+					return descriptionToJSON(this.peerConnection.localDescription, true);
+				}
+			},
+			remoteDescription: {
+				get ()
+				{
+					return descriptionToJSON(this.peerConnection.remoteDescription);
+				}
+			},
+			signalingState: {
+				get ()
+				{
+					return this.peerConnection.signalingState;
+				}
+			}
+		});
+		this.reconnect();
+	}
+
+	reconnect()
+	{
+		this.peerConnection		=new DefaultRTCPeerConnection({ sdpSemantics: 'unified-plan'});
         
-		this.beforeOffer(peerConnection);
+		this.beforeOffer();
  
-		let connectionTimer = options.setTimeout(() =>
+		let connectionTimer = this.options.setTimeout(() =>
 		{
-			if (peerConnection.iceConnectionState !== 'connected'
-				&& peerConnection.iceConnectionState !== 'completed')
+			if (this.peerConnection.iceConnectionState !== 'connected'
+				&& this.peerConnection.iceConnectionState !== 'completed')
 			{
 				this.close();
 			}
-		}, timeToConnected);
+		}, this.options.timeToConnected);
 
 		let reconnectionTimer = null;
 
 		const onIceConnectionStateChange = () =>
 		{
-            console.log("ICE state changed to: "+peerConnection.iceConnectionState);
-			if (peerConnection.iceConnectionState === 'connected'
-				|| peerConnection.iceConnectionState === 'completed')
+            console.log("ICE state changed to: "+this.peerConnection.iceConnectionState);
+			if (this.peerConnection.iceConnectionState === 'connected'
+				|| this.peerConnection.iceConnectionState === 'completed')
 			{
 				if (connectionTimer)
 				{
-					options.clearTimeout(connectionTimer);
+					this.options.clearTimeout(connectionTimer);
 					connectionTimer = null;
 				}
-				options.clearTimeout(reconnectionTimer);
+				this.options.clearTimeout(reconnectionTimer);
 				reconnectionTimer = null;
-			} else if (peerConnection.iceConnectionState === 'disconnected'
-				|| peerConnection.iceConnectionState === 'failed')
+			} else if (this.peerConnection.iceConnectionState === 'disconnected'
+				|| this.peerConnection.iceConnectionState === 'failed')
 			{
+				this.peerConnection.restartIce();
+				console.log("restartIce()");
 				if (!connectionTimer && !reconnectionTimer)
 				{
 					const self = this;
-					reconnectionTimer = options.setTimeout(() =>
+					reconnectionTimer = this.options.setTimeout(() =>
 					{
-						self.close();
-					}, timeToReconnected);
+						this.reconnect();
+						this.doOffer();
+					}, this.options.timeToReconnected);
 				}
 			}
 		};
 		const onIceGatheringStateChange = () =>
 		{
-            console.log("ICE gathering state changed to: "+peerConnection.iceGatheringState);
+            console.log("ICE gathering state changed to: "+this.peerConnection.iceGatheringState);
         };
 
-		peerConnection.addEventListener('iceconnectionstatechange', onIceConnectionStateChange);
-		peerConnection.addEventListener('icegatheringstatechange', onIceGatheringStateChange);
+		this.peerConnection.addEventListener('iceconnectionstatechange', onIceConnectionStateChange);
+		this.peerConnection.addEventListener('icegatheringstatechange', onIceGatheringStateChange);
 
         
 		const onConnectionStateChange = () =>
-           {
-            console.log("Connection State changed to: "+peerConnection.connectionState.toString());
-            this.connectionStateChanged(this,peerConnection.connectionState);
+        {
+            console.log("Connection State changed to: "+this.peerConnection.connectionState.toString());
+            this.connectionStateChanged(this,this.peerConnection.connectionState);
         }
-        peerConnection.addEventListener("connectionstatechange", onConnectionStateChange);
+        this.peerConnection.addEventListener("connectionstatechange", onConnectionStateChange);
 
         this.onIceCandidate= ({ candidate })=>
         {
             if (!candidate)
             {
-                options.clearTimeout(this.timeout);
-                //peerConnection.removeEventListener('icecandidate', this.onIceCandidate);
+                this.options.clearTimeout(this.timeout);
+                //this.peerConnection.removeEventListener('icecandidate', this.onIceCandidate);
                 this.deferred.resolve();
                 return;
             }
@@ -138,7 +173,6 @@ class WebRtcConnection extends EventEmitter
                 this.deferred.reject(new Error('Timed out waiting for host candidates'));
             }, timeToHostCandidates);
         
-        
             peerConnection.addEventListener('icecandidate', this.onIceCandidate);
         
             await this.deferred.promise;
@@ -148,11 +182,11 @@ class WebRtcConnection extends EventEmitter
 		{
 			try
 			{ 
-				const offer = await peerConnection.createOffer();
-				await peerConnection.setLocalDescription(offer);
+				const offer = await this.peerConnection.createOffer();
+				await this.peerConnection.setLocalDescription(offer);
 				var message = '{"teleport-signal-type":"offer","sdp":"'+offer.sdp+'"}'; //
 				this.sendConfigMessage(this.id,message);
-				await this.waitUntilIceGatheringStateComplete(peerConnection, options);
+				await this.waitUntilIceGatheringStateComplete(this.peerConnection, this.options);
 			} catch (error)
 			{
                 console.error(error.toString());
@@ -174,32 +208,31 @@ class WebRtcConnection extends EventEmitter
             var sessionDescription=new wrtc.RTCSessionDescription();
             sessionDescription.sdp=answer;
             sessionDescription.type="answer";
-			await peerConnection.setRemoteDescription( sessionDescription);
+			await this.peerConnection.setRemoteDescription( sessionDescription);
 		};
 		this.applyRemoteCandidate = async(candidate_txt,mid,mlineindex)=>
 		{
             console.log("received remote candidate.");
-            peerConnection.addIceCandidate(new wrtc.RTCIceCandidate({
+            this.peerConnection.addIceCandidate(new wrtc.RTCIceCandidate({
               candidate: candidate_txt,
               sdpMLineIndex: mlineindex,
               sdpMid: mid
             }));
 		};
-
 		this.close = () =>
 		{
-			peerConnection.removeEventListener('iceconnectionstatechange', onIceConnectionStateChange);
+			this.peerConnection.removeEventListener('iceconnectionstatechange', onIceConnectionStateChange);
 			if (connectionTimer)
 			{
-				options.clearTimeout(connectionTimer);
+				this.options.clearTimeout(connectionTimer);
 				connectionTimer = null;
 			}
 			if (reconnectionTimer)
 			{
-				options.clearTimeout(reconnectionTimer);
+				this.options.clearTimeout(reconnectionTimer);
 				reconnectionTimer = null;
 			}
-			peerConnection.close();
+			this.peerConnection.close();
 			this.state = 'closed';
 			this.emit('closed');
 		};
@@ -215,33 +248,6 @@ class WebRtcConnection extends EventEmitter
 				signalingState: this.signalingState
 			};
 		};
-
-		Object.defineProperties(this, {
-			iceConnectionState: {
-				get ()
-				{
-					return peerConnection.iceConnectionState;
-				}
-			},
-			localDescription: {
-				get ()
-				{
-					return descriptionToJSON(peerConnection.localDescription, true);
-				}
-			},
-			remoteDescription: {
-				get ()
-				{
-					return descriptionToJSON(peerConnection.remoteDescription);
-				}
-			},
-			signalingState: {
-				get ()
-				{
-					return peerConnection.signalingState;
-				}
-			}
-		});
 	}
     sendGeometry(buffer) {
 		try {	
@@ -251,7 +257,7 @@ class WebRtcConnection extends EventEmitter
             console.error('datachannel.sendGeometry exception: '+exception.message);
 		}
     }
-    beforeOffer(peerConnection) {
+    beforeOffer() {
           
         this.videoDataChannel = this.createDataChannel("video",20);
         this.tagDataChannel = this.createDataChannel("video_tags",40);
@@ -259,7 +265,7 @@ class WebRtcConnection extends EventEmitter
         this.geometryDataChannel = this.createDataChannel("geometry_unframed",80);
         this.reliableDataChannel = this.createDataChannel("reliable",100);
         this.unreliableDataChannel = this.createDataChannel("unreliable",120,false);
-       // this.dataChannel = peerConnection.createDataChannel('ping-pong',{id:2050});
+       // this.dataChannel = this.peerConnection.createDataChannel('ping-pong',{id:2050});
       
         function onMessage({ data }) {
           if (data === 'ping') {
@@ -270,9 +276,9 @@ class WebRtcConnection extends EventEmitter
         // NOTE(mroberts): This is a hack so that we can get a callback when the
         // RTCPeerConnection is closed. In the future, we can subscribe to
         // "connectionstatechange" events.
-        const { close } = peerConnection;
+        const { close } = this.peerConnection;
         var self=this;
-        peerConnection.close = function() {
+        this.peerConnection.close = function() {
             //self.dataChannel.removeEventListener('message', onMessage);
           return close.apply(this, arguments);
         };
@@ -304,7 +310,7 @@ class WebRtcConnection extends EventEmitter
         //See https://web.dev/articles/webrtc-datachannels. Can only use id if negotiated=true.
         const dataChannelOptions={ordered:reliable,maxRetransmits:reliable?10000:0,id:id};
         
-        var dc=this.pc.createDataChannel(label,dataChannelOptions);
+        var dc=this.peerConnection.createDataChannel(label,dataChannelOptions);
        
          dc.onmessage = this.receiveMessage.bind(this,id);
   

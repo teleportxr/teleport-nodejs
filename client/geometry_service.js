@@ -376,9 +376,12 @@ class GeometryService
 		var resource_uids=[];
 		let time_now_us=core.getTimestampUs();
 		for(const [uid, count] of this.streamedMeshes)
-		 {
+		{
 			//is mesh streamed
 			var res=GeometryService.GetOrCreateTrackedResource(uid);
+			// If it was already received we don't send it:
+			if(res.WasAcknowledgedByClient(this.clientID))
+				continue;
 			res.Sent(this.clientID,time_now_us);
 			if(res.WasSentToClient(this.clientID))
 			{
