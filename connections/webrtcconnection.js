@@ -190,8 +190,9 @@ class WebRtcConnection extends EventEmitter
 				await this.waitUntilIceGatheringStateComplete(this.peerConnection, this.options);
 			} catch (error)
 			{
-                console.error(error.toString());
+                console.error("doOffer error: "+error.toString());
 				this.close();
+                console.log("doOffer close");
 				throw error;
 			}
 		};
@@ -205,6 +206,7 @@ class WebRtcConnection extends EventEmitter
                 escapedStr=escapedStr.replaceAll('\n','\\n');
             } catch(error)
             {
+                console.error("applyAnswer error: "+error.toString());
             }
             var sessionDescription=new wrtc.RTCSessionDescription();
             sessionDescription.sdp=answer;
@@ -225,6 +227,7 @@ class WebRtcConnection extends EventEmitter
 		};
 		this.close = () =>
 		{
+			console.log("WebRtcConnection.close()");
 			this.peerConnection.removeEventListener('iceconnectionstatechange', onIceConnectionStateChange);
 			if (connectionTimer)
 			{
