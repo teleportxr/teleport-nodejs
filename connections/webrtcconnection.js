@@ -7,7 +7,6 @@ const DefaultRTCPeerConnection = require('@roamhq/wrtc').RTCPeerConnection;
 const TIME_TO_CONNECTED = 30000;
 const TIME_TO_HOST_CANDIDATES = 3000;  // NOTE: Too long.
 const TIME_TO_RECONNECTED = 1000;
-
 function EVEN_ID(id) {
     return (id-(id%2))
 }
@@ -19,6 +18,15 @@ class WebRtcConnection extends EventEmitter
 	constructor(id, options = {})
 	{
 		super();
+		const iceServers=[
+			"stun:stun.l.google.com:19302"
+			];
+		this.iceServers = [] ;
+		for(const s in iceServers)
+		{
+			this.iceServers.push({ 'urls': iceServers[s] });
+		}
+		//this.iceServers=[{'urls': 'stun:stun.l.google.com:19302'}];
 		this.id = id;
 		this.state = 'open';
 
@@ -76,7 +84,7 @@ class WebRtcConnection extends EventEmitter
 
 	reconnect()
 	{
-		this.peerConnection		=new DefaultRTCPeerConnection({ sdpSemantics: 'unified-plan'});
+		this.peerConnection		=new DefaultRTCPeerConnection({ sdpSemantics: 'unified-plan', 'iceServers': this.iceServers});
 		this.beforeOffer();
 		let connectionTimer = this.options.setTimeout(() =>
 		{
@@ -128,7 +136,7 @@ class WebRtcConnection extends EventEmitter
 		this.peerConnection.addEventListener('icegatheringstatechange', onIceGatheringStateChange);
 		this.peerConnection.addEventListener("icecandidateerror", (event) => {
 
-            console.log("ICE candidate error: "+str(event.errorCode)+" "+event.errorText+" "+event.port+" "+event.url);
+            console.log("ICE candidate error: "+event.errorCode+" "+event.errorText+" "+event.port+" "+event.url);
 		});
         
 		const onConnectionStateChange = () =>
