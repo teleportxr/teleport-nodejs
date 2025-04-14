@@ -77,9 +77,7 @@ class WebRtcConnection extends EventEmitter
 	reconnect()
 	{
 		this.peerConnection		=new DefaultRTCPeerConnection({ sdpSemantics: 'unified-plan'});
-        
 		this.beforeOffer();
- 
 		let connectionTimer = this.options.setTimeout(() =>
 		{
 			if (this.peerConnection.iceConnectionState !== 'connected'
@@ -215,12 +213,15 @@ class WebRtcConnection extends EventEmitter
 		};
 		this.applyRemoteCandidate = async(candidate_txt,mid,mlineindex)=>
 		{
-            console.log("received remote candidate.");
-            this.peerConnection.addIceCandidate(new wrtc.RTCIceCandidate({
+            console.log("received remote candidate: "+candidate_txt);
+			const ice=new wrtc.RTCIceCandidate({
               candidate: candidate_txt,
               sdpMLineIndex: mlineindex,
               sdpMid: mid
-            }));
+			  });
+            this.peerConnection.addIceCandidate(ice).catch((e)=>{
+				console.log(`Failure during addIceCandidate(): ${e.name}`);
+			});
 		};
 		this.close = () =>
 		{
