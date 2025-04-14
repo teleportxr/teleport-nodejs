@@ -127,7 +127,10 @@ class WebRtcConnection extends EventEmitter
 
 		this.peerConnection.addEventListener('iceconnectionstatechange', onIceConnectionStateChange);
 		this.peerConnection.addEventListener('icegatheringstatechange', onIceGatheringStateChange);
+		this.peerConnection.addEventListener("icecandidateerror", (event) => {
 
+            console.log("ICE candidate error: "+str(event.errorCode)+" "+event.errorText+" "+event.port+" "+event.url);
+		});
         
 		const onConnectionStateChange = () =>
         {
