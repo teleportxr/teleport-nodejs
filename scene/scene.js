@@ -60,6 +60,7 @@ class Scene {
 				if (pose) {
 					n.pose.position = { x: pose.position[0], y: pose.position[1], z: pose.position[2] };
 					n.pose.orientation = { x: pose.orientation[0], y: pose.orientation[1], z: pose.orientation[2], w: pose.orientation[3] };
+					n.pose.scale = { x: pose.scale[0], y: pose.scale[1], z: pose.scale[2] };
 				}
 				const components = sub_obj["components"];
 				if (components) {

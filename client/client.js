@@ -111,6 +111,7 @@ class Client {
     Start()
     {
         this.setupCommand=new command.SetupCommand();
+		this.setupCommand.float32_draw_distance=10.0;
 		if(this.scene)
 		{
 			if(this.scene.backgroundTexturePath&&this.scene.backgroundTexturePath!="")

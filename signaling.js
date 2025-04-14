@@ -60,7 +60,7 @@ function sendResponseToClient(clientID) {
 	if (!signalingClients.has(clientID)) {
         console.log("No client "+clientID+" found.");
 	} else {
-        var signalingClient=signalingClients[clientID];
+        var signalingClient=signalingClients.get(clientID);
 		// First, we send the WebSockets signaling response.
 		var txt =
 			'{"teleport-signal-type":"request-response","content":{"clientID": ' +
@@ -96,7 +96,7 @@ function processInitialRequest(clientID, signalingClient, content) {
 		}
 		// identifies as a previous client. Discard the new client ID.
 		//TODO: we're taking the client's word for it that it is clientID. Some kind of token/hash?
-		signalingClients[clientID] = signalingClient;
+		signalingClients.set(clientID,signalingClient);
 		if (j_clientID != clientID) {
 			console.log(
 				"info: Remapped from " + clientID + " to " + j_clientID
@@ -106,36 +106,39 @@ function processInitialRequest(clientID, signalingClient, content) {
 			);
 
 			if (signalingClients.has(clientID)) {
-				signalingClients[clientID] = null;
+				signalingClients.delete(clientID);
 				clientUids.erase(clientID);
 			}
 			clientID = j_clientID;
 		}
 	}
 	var ipAddr = signalingClient.ip_addr_port;
+	if (desiredIP.length != 0 && !ipAddr.contains(desiredIP))
+		return;
 	// Skip clients we have already added.
 	if (signalingClient.signalingState == SignalingState.START)
 		signalingClient.ChangeSignalingState(SignalingState.REQUESTED);
+	//Ignore connections from clients with the wrong IP, if a desired IP has been set.
 	// if signalingState is START, we should not have a client...
-	if (signalingClient.client != null) {
+	if (signalingClient.signalingState==SignalingState.ACCEPTED||signalingClient.signalingState==SignalingState.STREAMING)
+	{
 		// ok, we've received a connection request from a client that WE think we already have.
 		// Apparently the CLIENT thinks they've disconnected.
 		// The client might, as far as we know, have lost the information it needs to continue the connection.
 		// Therefore we should resend everything required.
-		signalingClient.ChangeSignalingState(SignalingState.STREAMING);
+		//signalingClient.ChangeSignalingState(SignalingState.STREAMING);
 		console.log(
 			"Warning: Client " +
 				clientID +
 				" reconnected, but we didn't know we'd lost them."
 		);
 		// It may be just that the connection request was already in flight when we accepted its predecessor.
-		sendResponseToClient(clientID);
+		//sendResponseToClient(clientID);
+		startStreaming(signalingClient);
 		return;
 	}
-	if (signalingClient.signalingState != SignalingState.REQUESTED)
-        return;
-	//Ignore connections from clients with the wrong IP, if a desired IP has been set.
-	if (desiredIP.length == 0 || ipAddr.contains(desiredIP)) {
+	if (signalingClient.signalingState==SignalingState.REQUESTED)
+	{
 		startStreaming(signalingClient);
 	}
 }
@@ -252,7 +255,7 @@ exports.sendConfigMessage = function (clientID, msg) {
 
 	if (signalingClients.has(clientID)) {
 		console.log("sendConfigMessage to "+clientID+": "+msg);
-		signalingClients[clientID].ws.send(escapedStr);
+		signalingClients.get(clientID).ws.send(escapedStr);
 	} else {
 		console.log(
 			"sendConfigMessage with clientID " +

@@ -47,7 +47,7 @@ class ClientManager
 				error("Failed to create a root node for client "+clientID);
 				return null;
 			}
-			var sigCli=signaling.signalingClients[clientID];
+			var sigCli=signaling.signalingClients.get(clientID);
 			var sigSend=sigCli.sendToClient.bind(sigCli);
 			var c=new client.Client(clientID,sigSend);
 			c.setOrigin(origin_uid);
@@ -97,7 +97,7 @@ class ClientManager
 	writeState() {
 		var content="<table><tr><th>Client Id</th><th>IP Address</th><th>Signalling State</th></tr>";
 		for (let [cl_id,cl] of this.clients) {
-			var sigCli=signaling.signalingClients[cl_id];
+			var sigCli=signaling.signalingClients.get(cl_id);
 			content+="\n<tr><td>"+cl_id+"</td> <td>" + sigCli.ip + "</td> <td>" + sigCli.signalingState + "</td></tr>";
 		};
 		content+="\n</table>";

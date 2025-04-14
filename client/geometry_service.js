@@ -27,30 +27,30 @@ class TrackedResource
         this.acknowledged=new bit.BitSet();	        // Whether the client acknowledged receiving the resource.		
     }
 	IsNeededByClient(clientID) {
-		return this.clientNeeds.get[clientIDToIndex[clientID]];
+		return this.clientNeeds.get(clientIDToIndex.get(clientID));
 	}
 	WasSentToClient(clientID) {
-		return this.sent.get[clientIDToIndex[clientID]];
+		return this.sent.get(clientIDToIndex.get(clientID));
 	}
 	WasAcknowledgedByClient(clientID) {
-		return this.acknowledged.get(clientIDToIndex[clientID]);
+		return this.acknowledged.get(clientIDToIndex.get(clientID));
 	}
 	GetTimeSent(clientID) {
-		return this.sent_server_time_us[clientID];
+		return this.sent_server_time_us.get(clientID);
 	}
 	Sent(clientID,timestamp) {
-		this.sent.set(clientIDToIndex[clientID],true);
-		this.acknowledged.set(clientIDToIndex[clientID],false);
+		this.sent.set(clientIDToIndex.get(clientID),true);
+		this.acknowledged.set(clientIDToIndex.get(clientID),false);
 		this.sent_server_time_us.set(clientID,timestamp);
 	}
 	AcknowledgeBy(clientID) {
-		this.acknowledged.set(clientIDToIndex[clientID],true);
+		this.acknowledged.set(clientIDToIndex.get(clientID),true);
 		// erase timestamp?
 		this.sent_server_time_us.delete(clientID);
 	}
 	Timeout(clientID) {
-		this.sent.set(clientIDToIndex[clientID],false);
-		this.acknowledged.set(clientIDToIndex[clientID],false);
+		this.sent.set(clientIDToIndex.get(clientID),false);
+		this.acknowledged.set(clientIDToIndex.get(clientID),false);
 		this.sent_server_time_us.clear(clientID);
 	}
 };
@@ -92,6 +92,8 @@ class GeometryService
 		this.streamedFontAtlases=new Map();
 
 		this.backgroundTextureUid=0;
+		// ten seconds for timeout. Tweak this.
+		this.timeout_us=10000000;
     }
 	SetScene(sc) {
 		this.scene=sc;
@@ -299,8 +301,6 @@ class GeometryService
 
 	UpdateNodesToStream()
 	{
-		// ten seconds for timeout. Tweak this.
-		const timeout_us=10000000;
 		//  The set of ALL the nodes of sufficient priority that the client NEEDS is streamedNodes.
 		for(let uid of this.nodesToStreamEventually)
 		{
@@ -343,7 +343,7 @@ class GeometryService
 			{
 				var timeSentUs=res.GetTimeSent(this.clientID);
 				// If we sent it too long ago with no acknowledgement, we can send it again.
-				if(time_now_us-timeSentUs>timeout_us)
+				if(time_now_us-timeSentUs>this.timeout_us)
 				{
 					res.Timeout(this.clientID);
 				}
@@ -382,12 +382,11 @@ class GeometryService
 			// If it was already received we don't send it:
 			if(res.WasAcknowledgedByClient(this.clientID))
 				continue;
-			res.Sent(this.clientID,time_now_us);
 			if(res.WasSentToClient(this.clientID))
 			{
 				var timeSentUs=res.GetTimeSent(this.clientID);
 				// If we sent it too long ago with no acknowledgement, we can send it again.
-				if(time_now_us-timeSentUs>timeout_us)
+				if(time_now_us-timeSentUs>this.timeout_us)
 				{
 					res.Timeout(this.clientID);
 				}
@@ -396,6 +395,7 @@ class GeometryService
 			{
 				// if it hasn't been sent at all to our client, we add its resources.
 				resource_uids.push(uid);
+				res.Sent(this.clientID,time_now_us);
 			}
 		};
 		return resource_uids;
