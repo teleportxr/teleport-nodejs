@@ -4,7 +4,7 @@ const EventEmitter = require('events');
 const wrtc =require('@roamhq/wrtc');
 const DefaultRTCPeerConnection = require('@roamhq/wrtc').RTCPeerConnection;
 
-const TIME_TO_CONNECTED = 10000;
+const TIME_TO_CONNECTED = 30000;
 const TIME_TO_HOST_CANDIDATES = 3000;  // NOTE: Too long.
 const TIME_TO_RECONNECTED = 1000;
 
@@ -83,6 +83,7 @@ class WebRtcConnection extends EventEmitter
 			if (this.peerConnection.iceConnectionState !== 'connected'
 				&& this.peerConnection.iceConnectionState !== 'completed')
 			{
+				console.log("WebRtcConnection timeout, this.peerConnection.iceConnectionState = "+this.peerConnection.iceConnectionState);
 				this.close();
 			}
 		}, this.options.timeToConnected);
