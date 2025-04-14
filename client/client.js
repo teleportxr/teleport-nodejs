@@ -231,6 +231,16 @@ class Client {
 		this.geometryService.EncodedResource(uid);
 		const view2 = new DataView(buffer, 0, nodeSize); 
 		console.log("Sending node "+uid+" "+node.name+" to Client "+this.clientID+", size: "+nodeSize+" bytes");
+		if(!this.webRtcConnection)
+		{
+			console.error("this.webRtcConnection is null");
+			return;
+		}
+		if(!this.webRtcConnection.sendGeometry)
+		{
+			console.error("this.webRtcConnection.sendGeometry is null");
+			return;
+		}
 		this.webRtcConnection.sendGeometry(view2);
 	}
 	SendGenericResource(uid)
