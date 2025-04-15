@@ -7,7 +7,7 @@ function initServer(signaling_port) {
 	var cm=client_manager.getInstance();
 	const webRtcConnectionManager = WebRtcConnectionManager.getInstance();
 	webRtcConnectionManager.SetSendConfigMessage(signaling.sendConfigMessage);
-	return signaling.init(webRtcConnectionManager,cm.newClient.bind(cm),signaling_port);
+	return signaling.init(webRtcConnectionManager,cm.newClient.bind(cm),cm.disconnectClient.bind(cm),signaling_port);
   }
   
   module.exports = {initServer}

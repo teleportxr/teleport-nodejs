@@ -6,56 +6,65 @@ class WebRtcConnectionManager
 {
     constructor(options = {})
     {
-        options = {
-            Connection: WebRtcConnection,
-            ...options
-        };
-		const { Connection } = options;
-		const connections = new Map();
-		const closedListeners = new Map();
+		this.connections = new Map();
+		this.closedListeners = new Map();
+		this.options=options;
+    }
 
-		function deleteConnection(connection) {
+	deleteConnection(connection)
+	{
+		console.log("deleteConnection "+connection.clientID);
 			// 1. Remove "closed" listener?
-			//const closedListener = closedListeners.get(connection);
+		//const closedListener = this.closedListeners.get(connection);
 			//connection.removeListener("closed", closedListener);
-			//closedListeners.delete(connection);
+		//this.closedListeners.delete(connection);
 
-			// 2. Remove the Connection from the Map.
-			connections.delete(connection.id);
-		}
+		// 2. Remove the WebRtcConnection from the Map.
+		this.connections.delete(connection.id);
+	}
+	getConnection(id)
+	{
+		return this.connections.get(id) || null;
+	}
+
+	getConnections()
+	{
+		return [...this.connections.values()];
+	};
+
         
-        this.createConnection =  (clientID,connectionStateChangedcb,messageReceivedReliableCb,messageReceivedUnreliableCb) =>
+	closedListener()
+	{
+		this.deleteConnection(connection);
+		}
+	createConnection(clientID,connectionStateChangedcb,messageReceivedReliableCb,messageReceivedUnreliableCb)
         {
+		var options=this.options;
 			options.sendConfigMessage	=this.sendConfigMessage;
            
 			options.messageReceivedReliable		=messageReceivedReliableCb;
 			options.messageReceivedUnreliable	=messageReceivedUnreliableCb;
-            const connection = new Connection(clientID,options);
+        const connection = new WebRtcConnection(clientID,options);
             connection.connectionStateChanged=connectionStateChangedcb;
-            // 1. Add the "closed" listener.
-            function closedListener() { deleteConnection(connection); }
-			this.createConnection = (clientID) =>
-            closedListeners.set(connection, closedListener);
-            connection.once('closed', closedListener);
+        //  We will not add a "closed" listener, because only the client object will be permitted to close its connection.
+		//this.createConnection = (clientID) => this.closedListeners.set(connection, this.closedListener);
+        //connection.once('closed', this.closedListener);
 
-            // 2. Add the Connection to the Map.
-            connections.set(connection.id, connection);
+        // 2. Add the WebRtcConnection to the Map.
+        this.connections.set(connection.id, connection);
 
             connection.doOffer();
             return connection;
         };
-
-        this.getConnection = id =>
+	destroyConnection(clientID)
         {
-            return connections.get(id) || null;
-        };
-
-        this.getConnections = () =>
+		var connection=this.connections.get(clientID);
+		if(connection)
         {
-            return [...connections.values()];
-        };
+			connection.close();
+			this.connections.delete(clientID);
     }
-
+	}
     toJSON ()
     {
         return this.getConnections().map(connection => connection.toJSON());
@@ -69,7 +78,7 @@ class WebRtcConnectionManager
 WebRtcConnectionManager.create = function create (options)
 {
     return new WebRtcConnectionManager({
-        Connection: function (id)
+        WebRtcConnection: function (id)
         {
             return new WebRtcConnection(id,options);
         },

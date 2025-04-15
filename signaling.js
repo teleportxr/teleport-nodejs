@@ -11,6 +11,7 @@ class SignalingState {
 	static ACCEPTED = new SignalingState("Accepted");
 	static STREAMING = new SignalingState("Streaming");
 	static INVALID = new SignalingState("Invalid");
+	static STOP = new SignalingState("Stop");
 
 	constructor(name) {
 		this.name = name;
@@ -49,6 +50,7 @@ var signalingClients = new Map();
 var desiredIP = "";
 var webRtcConnectionManager = null;
 var newClient=null;
+var disconnectClient=null;
 function startStreaming(signalingClient) {
     signalingClient.ChangeSignalingState(SignalingState.ACCEPTED);
 	// And we send the WebSockets request-response.
@@ -70,7 +72,9 @@ function sendResponseToClient(clientID) {
 	}
 }
 function processDisconnection(clientID,signalingClient){
-
+    signalingClient.ChangeSignalingState(SignalingState.START);
+	disconnectClient(signalingClient.clientID);
+	signalingClients.delete(clientID);
 }
 function processInitialRequest(clientID, signalingClient, content) {
 	var j_clientID = 0;
@@ -217,7 +221,7 @@ function OnWebSocket(ws, req) {
 		console.log("Some Error occurred");
 	};
 }
-exports.init = function (webRtcCM, newClientFn, signaling_port) {
+exports.init = function (webRtcCM, newClientFn, disconnectClientFn, signaling_port) {
 	// Creating a new websocket server
 	// const signaling_port = process.env.PORT || 8081;
 	var wss;
@@ -231,6 +235,7 @@ exports.init = function (webRtcCM, newClientFn, signaling_port) {
 	}
 	webRtcConnectionManager = webRtcCM;
 	newClient=newClientFn;
+	disconnectClient=disconnectClientFn;
 	// Creating connection using websocket
 	wss.on("connection", (ws, req) => {
 		OnWebSocket(ws, req);

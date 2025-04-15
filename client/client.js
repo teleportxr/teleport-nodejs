@@ -140,6 +140,13 @@ class Client {
 		//	function(value) {myDisplayer(value);},
 		//	function(error) {myDisplayer(error);}
     }
+	//! Cleanly shut down the WebRTC connection. This may be called when the client has signalled that it is
+	//! disconnecting, or when the server determines that the client is lost or needs to be booted.
+	StopStreaming()
+	{
+		this.webRtcConnectionManager.destroyConnection(this.clientID);
+		this.webRtcConnection=null;
+	}
 	// Generic message acknowledgement. Certain kinds of message are expected to be ack'ed.
 	ReceiveAcknowledgement(data)
 	{
@@ -239,6 +246,7 @@ class Client {
 		if(!this.webRtcConnection.sendGeometry)
 		{
 			console.error("this.webRtcConnection.sendGeometry is null");
+			console.log(JSON.stringify(this.webRtcConnection));
 			return;
 		}
 		this.webRtcConnection.sendGeometry(view2);
