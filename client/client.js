@@ -38,7 +38,7 @@ class Client {
 	tick(timestamp){
 		this.geometryService.GetNodesToSend();
 	}
-    streamingConnectionStateChanged(wrtcConn,newState)
+    streamingConnectionStateChanged(newState)
     {
         //this.webRtcConnection=wrtcConn;
 		// This should have come from our own existing webRtcConnection and nowhere else.

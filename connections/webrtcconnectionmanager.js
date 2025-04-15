@@ -36,16 +36,16 @@ class WebRtcConnectionManager
 	closedListener()
 	{
 		this.deleteConnection(connection);
-		}
+	}
 	createConnection(clientID,connectionStateChangedcb,messageReceivedReliableCb,messageReceivedUnreliableCb)
-        {
+	{
 		var options=this.options;
-			options.sendConfigMessage	=this.sendConfigMessage;
-           
-			options.messageReceivedReliable		=messageReceivedReliableCb;
-			options.messageReceivedUnreliable	=messageReceivedUnreliableCb;
+		options.sendConfigMessage	=this.sendConfigMessage;
+        
+		options.messageReceivedReliable		=messageReceivedReliableCb;
+		options.messageReceivedUnreliable	=messageReceivedUnreliableCb;
+		options.connectionStateChanged		=connectionStateChangedCb;
         const connection = new WebRtcConnection(clientID,options);
-            connection.connectionStateChanged=connectionStateChangedcb;
         //  We will not add a "closed" listener, because only the client object will be permitted to close its connection.
 		//this.createConnection = (clientID) => this.closedListeners.set(connection, this.closedListener);
         //connection.once('closed', this.closedListener);

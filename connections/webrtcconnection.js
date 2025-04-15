@@ -48,7 +48,7 @@ class WebRtcConnection extends EventEmitter
 
 		this.messageReceivedReliableCb		=options.messageReceivedReliable;
 		this.messageReceivedUnreliableCb	=options.messageReceivedUnreliable;
-		
+		this.connectionStateChangedCb=options.connectionStateChanged;
 		this.sendConfigMessage		=options.sendConfigMessage;
 
 
@@ -80,7 +80,12 @@ class WebRtcConnection extends EventEmitter
 		});
 		this.reconnect();
 	}
-
+	connectionStateChanged()
+	{
+		if(!this.peerConnection)
+			return;
+		this.connectionStateChangedCb(this.peerConnection.connectionState);
+	}
 	reconnect()
 	{
 		this.peerConnection		=new DefaultRTCPeerConnection({ sdpSemantics: 'unified-plan', 'iceServers': this.iceServers});
@@ -104,7 +109,7 @@ class WebRtcConnection extends EventEmitter
             console.log("ICE candidate error: "+event.errorCode+" "+event.errorText+" "+event.port+" "+event.url);
 		});
         
-        this.peerConnection.addEventListener("connectionstatechange", this.connectionStateChanged.bind(this,this.peerConnection.connectionState));
+        this.peerConnection.addEventListener("connectionstatechange", this.connectionStateChanged.bind(this));
 
         this.onIceCandidate= ({ candidate })=>
         {
@@ -162,7 +167,6 @@ class WebRtcConnection extends EventEmitter
                 console.error("doOffer error: "+error.toString());
 				this.close();
                 console.log("doOffer close");
-				throw error;
 			}
 		};
 
@@ -180,6 +184,7 @@ class WebRtcConnection extends EventEmitter
             var sessionDescription=new wrtc.RTCSessionDescription();
             sessionDescription.sdp=answer;
             sessionDescription.type="answer";
+			if(this.peerConnection)
 			await this.peerConnection.setRemoteDescription( sessionDescription);
 		};
 		this.applyRemoteCandidate = async(candidate_txt,mid,mlineindex)=>
@@ -190,6 +195,7 @@ class WebRtcConnection extends EventEmitter
               sdpMLineIndex: mlineindex,
               sdpMid: mid
 			  });
+			if(this.peerConnection)
             this.peerConnection.addIceCandidate(ice).catch((e)=>{
 				console.log(`Failure during addIceCandidate(): ${e.name}`);
 			});
@@ -206,12 +212,6 @@ class WebRtcConnection extends EventEmitter
 				signalingState: this.signalingState
 			};
 		};
-	}
-	connectionStateChanged()
-	{
-		if(!this.peerConnection)
-			return;
-		console.log("Connection State changed to: "+this.peerConnection.connectionState.toString());
 	}
 	onIceConnectionStateChange()
 	{
@@ -262,7 +262,7 @@ class WebRtcConnection extends EventEmitter
 			this.peerConnection.removeEventListener('iceconnectionstatechange', this.onIceConnectionStateChange.bind(this));
 			this.peerConnection.removeEventListener('icegatheringstatechange', this.onIceGatheringStateChange.bind(this));
 		//this.peerConnection.removeEventListener("icecandidateerror", (event) => {
-			this.peerConnection.removeEventListener("connectionstatechange", this.connectionStateChanged.bind(this,this.peerConnection.connectionState));
+			this.peerConnection.removeEventListener("connectionstatechange", this.connectionStateChanged.bind(this));
 		}
 		if (this.connectionTimer)
 		{
