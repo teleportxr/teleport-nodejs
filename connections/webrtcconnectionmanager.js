@@ -37,7 +37,7 @@ class WebRtcConnectionManager
 	{
 		this.deleteConnection(connection);
 	}
-	createConnection(clientID,connectionStateChangedcb,messageReceivedReliableCb,messageReceivedUnreliableCb)
+	createConnection(clientID,connectionStateChangedCb,messageReceivedReliableCb,messageReceivedUnreliableCb)
 	{
 		var options=this.options;
 		options.sendConfigMessage	=this.sendConfigMessage;
