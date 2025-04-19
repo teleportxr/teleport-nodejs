@@ -119,6 +119,14 @@ class Client {
 				this.setupCommand.BackgroundMode_backgroundMode=BackgroundMode.TEXTURE;
 				this.setupCommand.uid_backgroundTexture=resources.AddTexture(this.scene.backgroundTexturePath);
 			}
+			if(this.scene.diffuseCubemapPath&&this.scene.diffuseCubemapPath!="")
+			{
+				this.setupCommand.ClientDynamicLighting_clientDynamicLighting.uid_diffuse_cubemap_texture_uid=resources.AddTexture(this.scene.diffuseCubemapPath);
+			}
+			if(this.scene.specularCubemapPath&&this.scene.specularCubemapPath!="")
+			{
+				this.setupCommand.ClientDynamicLighting_clientDynamicLighting.uid_specular_cubemap_texture_uid=resources.AddTexture(this.scene.specularCubemapPath);
+			}
 		}
         this.SendCommand(this.setupCommand);
     }

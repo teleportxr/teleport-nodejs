@@ -326,6 +326,21 @@ class GeometryService
 			this.backgroundTextureUid = bg_uid;
 			this.AddOrRemoveTexture(this.backgroundTextureUid,1);
 		}
+
+		
+		var diff_uid=resources.GetResourceUidFromUrl(core.GeometryPayloadType.TexturePointer,this.scene.diffuseCubemapPath);
+		if(this.diffuseTextureUid!=diff_uid) {
+			this.AddOrRemoveTexture(this.diffuseTextureUid,-1);
+			this.diffuseTextureUid = diff_uid;
+			this.AddOrRemoveTexture(this.diffuseTextureUid,1);
+		}
+		
+		var spec_uid=resources.GetResourceUidFromUrl(core.GeometryPayloadType.TexturePointer,this.scene.specularCubemapPath);
+		if(this.specularTextureUid!=spec_uid) {
+			this.AddOrRemoveTexture(this.specularTextureUid,-1);
+			this.specularTextureUid = spec_uid;
+			this.AddOrRemoveTexture(this.specularTextureUid,1);
+		}
 	}
 	GetResourcesToSend(resourcePool) {
 		var toSend=[];
