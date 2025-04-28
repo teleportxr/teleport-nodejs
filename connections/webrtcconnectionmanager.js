@@ -32,11 +32,11 @@ class WebRtcConnectionManager
 		return [...this.connections.values()];
 	};
 
-        
 	closedListener()
 	{
 		this.deleteConnection(connection);
 	}
+
 	createConnection(clientID,connectionStateChangedCb,messageReceivedReliableCb,messageReceivedUnreliableCb)
 	{
 		var options=this.options;

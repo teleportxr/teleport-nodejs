@@ -188,6 +188,7 @@ class Node
         return Node.sizeof();
     }
 	setMeshComponent(mesh_url) {
+		resources.AddMesh(mesh_url);
 		this.components.forEach(component => {
 			if(component.getType()==NodeDataType.Mesh) {
 				component.meshUrl=mesh_url;
@@ -199,6 +200,9 @@ class Node
 		m.meshUrl=mesh_url;
 		m.data_uid=resources.GetResourceUidFromUrl(core.GeometryPayloadType.MeshPointer,mesh_url);
 		this.components.push(m);
+	}
+	setCanvasComponent(canvas_name) {
+		
 	}
 	encodeIntoDataView(dataView,byteOffset) {
 		byteOffset=core.put_uint8(dataView,byteOffset,core.GeometryPayloadType.Node);

@@ -9,6 +9,8 @@ class Scene {
 	constructor() {
 		this.nodes = new Map();
 		this.backgroundTexturePath="";
+		this.diffuseCubemapPath="";
+		this.specularCubemapPath="";
 	}
 	GetOrCreateNode(uid) {
 		if (!this.nodes.has(uid)) {
@@ -48,6 +50,16 @@ class Scene {
 				this.backgroundTexturePath=j.environment.background_texture;
 				resources.AddTexture(this.backgroundTexturePath);
 			}
+			if(j.environment.diffuse_cubemap)
+			{
+				this.diffuseCubemapPath=j.environment.diffuse_cubemap;
+				resources.AddTexture(this.diffuseCubemapPath);
+			}
+			if(j.environment.specular_cubemap)
+			{
+				this.specularCubemapPath=j.environment.specular_cubemap;
+				resources.AddTexture(this.specularCubemapPath);
+			}
 		}
 		if(j.nodes)
 		{
@@ -68,8 +80,12 @@ class Scene {
 						if (c["type"] == "mesh")
 						{
 							var mesh_url=c["url"];
-							resources.AddMesh(mesh_url);
 							n.setMeshComponent(mesh_url);
+						}
+						if (c["type"] == "canvas")
+						{
+							var canvas={content:c["content"],};
+							n.setCanvasComponent(uid);
 						}
 					}
 				}

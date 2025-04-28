@@ -134,6 +134,9 @@ class GeometryService
 	}
 	StreamOrUnstream(resourceMap,uid,diff)
 	{
+		// exclude "undefined"
+		if(!uid)
+			return;
 		if(uid==BigInt(0))
 			return;
 		if(uid==0)
@@ -321,22 +324,21 @@ class GeometryService
 	UpdateTexturesToStream() {
 		// scene background?
 		var bg_uid=resources.GetResourceUidFromUrl(core.GeometryPayloadType.TexturePointer,this.scene.backgroundTexturePath);
-		if(this.backgroundTextureUid!=bg_uid) {
+		if(bg_uid&&this.backgroundTextureUid!=bg_uid) {
 			this.AddOrRemoveTexture(this.backgroundTextureUid,-1);
 			this.backgroundTextureUid = bg_uid;
 			this.AddOrRemoveTexture(this.backgroundTextureUid,1);
 		}
 
-		
 		var diff_uid=resources.GetResourceUidFromUrl(core.GeometryPayloadType.TexturePointer,this.scene.diffuseCubemapPath);
-		if(this.diffuseTextureUid!=diff_uid) {
+		if(diff_uid&&this.diffuseTextureUid!=diff_uid) {
 			this.AddOrRemoveTexture(this.diffuseTextureUid,-1);
 			this.diffuseTextureUid = diff_uid;
 			this.AddOrRemoveTexture(this.diffuseTextureUid,1);
 		}
 		
 		var spec_uid=resources.GetResourceUidFromUrl(core.GeometryPayloadType.TexturePointer,this.scene.specularCubemapPath);
-		if(this.specularTextureUid!=spec_uid) {
+		if(spec_uid&&this.specularTextureUid!=spec_uid) {
 			this.AddOrRemoveTexture(this.specularTextureUid,-1);
 			this.specularTextureUid = spec_uid;
 			this.AddOrRemoveTexture(this.specularTextureUid,1);

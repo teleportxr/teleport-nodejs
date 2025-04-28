@@ -53,11 +53,10 @@ class SetupCommand extends Command
         // TODO: replace this with a background Material, which MAY contain video, te			xture and/or plain colours.
         this.BackgroundMode_backgroundMode=core.BackgroundMode.COLOUR;   	//!< 129+1=130	Whether the server supplies a background, and of which type.
         this.vec4_backgroundColour=new core.vec4();						    //!< 130+16=146 If the background is of the COLOUR type, which colour to use.
-        this.ClientDynamicLighting_clientDynamicLighting=new core.ClientDynamicLighting();	//!<			Setup for dynamic object lighting. 174+57=231 bytes
         this.uid_backgroundTexture=BigInt(0);
     }
     static sizeof(){
-        return 211;
+        return 154;
     }
     size(){
         return SetupCommand.sizeof();
@@ -124,4 +123,24 @@ class SetOriginNodeCommand extends AckedCommand
     }
 };
 
-module.exports= {Command,CommandPayloadType,SetupCommand,AcknowledgeHandshakeCommand,SetOriginNodeCommand};
+class SetLightingCommand extends AckedCommand
+{
+    constructor(){
+        super();
+        //   Command=1 byte
+        this.CommandPayloadType_commandPayloadType=CommandPayloadType.SetupLighting;
+        //   AckedCommand=9 bytes
+		// ClientDynamicLighting_clientDynamicLighting 57 bytes
+		this.ClientDynamicLighting_clientDynamicLighting=new core.ClientDynamicLighting();	//!<			Setup for dynamic object lighting. 174+57=231 bytes
+    }
+	static sizeof()
+	{
+		return AckedCommand.sizeof()+57;
+	}
+    size(){
+        return SetLightingCommand.sizeof();
+    }
+}
+
+
+module.exports= {Command,CommandPayloadType,SetupCommand,AcknowledgeHandshakeCommand,SetOriginNodeCommand,SetLightingCommand};

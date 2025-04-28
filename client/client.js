@@ -23,6 +23,16 @@ class OriginState
 	}
 };
 
+class LightingState
+{
+    constructor() {
+		this.ackId=0;
+		this.acknowledged=false;
+		this.serverTimeSentUs=BigInt(0);
+		this.clientDynamicLighting=new core.ClientDynamicLighting();
+	}
+};
+
 class Client {
     constructor(cid,sigSend) {
 		this.signalingSend=sigSend;
@@ -33,6 +43,7 @@ class Client {
 		this.webRtcConnected=false;
 		this.webRtcConnection=null;
 		this.currentOriginState=new OriginState();
+		this.currentLightingState=new LightingState();
 		this.next_ack_id=BigInt(1);
     }
 	tick(timestamp){
@@ -111,6 +122,7 @@ class Client {
     Start()
     {
         this.setupCommand=new command.SetupCommand();
+        this.clientDynamicLighting=new core.ClientDynamicLighting();
 		this.setupCommand.float32_draw_distance=10.0;
 		if(this.scene)
 		{
@@ -121,11 +133,11 @@ class Client {
 			}
 			if(this.scene.diffuseCubemapPath&&this.scene.diffuseCubemapPath!="")
 			{
-				this.setupCommand.ClientDynamicLighting_clientDynamicLighting.uid_diffuse_cubemap_texture_uid=resources.AddTexture(this.scene.diffuseCubemapPath);
+				this.clientDynamicLighting.uid_diffuse_cubemap_texture_uid=resources.AddTexture(this.scene.diffuseCubemapPath);
 			}
 			if(this.scene.specularCubemapPath&&this.scene.specularCubemapPath!="")
 			{
-				this.setupCommand.ClientDynamicLighting_clientDynamicLighting.uid_specular_cubemap_texture_uid=resources.AddTexture(this.scene.specularCubemapPath);
+				this.clientDynamicLighting.uid_specular_cubemap_texture_uid=resources.AddTexture(this.scene.specularCubemapPath);
 			}
 		}
         this.SendCommand(this.setupCommand);
@@ -172,6 +184,10 @@ class Client {
 		{
 			this.currentOriginState.acknowledged=true;
 		}
+		if(msg.uint64_ackId==this.currentLightingState.ackId)
+		{
+			this.currentLightingState.acknowledged=true;
+		}
 	}
 	UpdateStreaming()
 	{
@@ -204,6 +220,8 @@ class Client {
 		}
 		if(!this.currentOriginState.acknowledged)
 			this.SendOrigin();
+		if(!this.currentLightingState.acknowledged)
+			this.SendLighting();
 	}
 	SendOrigin()
 	{
@@ -236,6 +254,33 @@ class Client {
 		this.currentOriginState.acknowledged=false;
 		this.currentOriginState.serverTimeSentUs=core.getTimestampUs();
 		this.SendCommand(setp);
+	}
+	SendLighting()
+	{
+		let time_now_us=core.getTimestampUs();
+		let ackWaitTimeUs=BigInt(3000000);// three seconds
+		if(this.setupCommand.startTimestamp_utc_unix_us==0)
+			return;
+		// If we sent it, and  haven't timed out waiting for ack...
+		if(this.currentLightingState.serverTimeSentUs!=BigInt(0)
+			&&(time_now_us-this.currentLightingState.serverTimeSentUs)<ackWaitTimeUs)
+		{
+			return;
+		}
+		if (!this.webRtcConnection)
+		{
+			return;
+		}
+
+		var setl					=new command.SetLightingCommand();
+		setl.uint64_ackId			=this.next_ack_id++;
+		setl.ClientDynamicLighting_clientDynamicLighting = this.clientDynamicLighting;
+		
+		// This is now the valid origin.
+		this.currentLightingState.ackId=setl.uint64_ackId;
+		this.currentLightingState.acknowledged=false;
+		this.currentLightingState.serverTimeSentUs=core.getTimestampUs();
+		this.SendCommand(setl);
 	}
 	SendNode(uid)
 	{
