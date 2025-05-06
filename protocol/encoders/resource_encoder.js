@@ -18,7 +18,6 @@ function EncodeResource(res,buffer)
 	var byteOffset=0;
 	const dataView = new DataView(buffer); 
 	byteOffset=putPlaceholderSize(dataView);
-
 	var t=res.encodeIntoDataView(dataView,byteOffset);
 	byteOffset=t;
 	// Actual size is now known so update payload size

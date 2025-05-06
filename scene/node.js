@@ -96,7 +96,7 @@ class RenderState
 class Component {
     constructor()
 	{
-		this.uid=0;
+		//this.uid=0;
 		this.data_uid=0;
 	}
 	getType(){
@@ -119,7 +119,7 @@ class MeshComponent extends Component
 	encodeIntoDataView(dataView,byteOffset) {
 		byteOffset=core.put_uint8(dataView,byteOffset,NodeDataType.Mesh);
 
-		var resuid=resources.GetResourceUidFromUrl(core.GeometryPayloadType.MeshPointer,this.meshUrl);
+		var resuid=resources.GetOrAddResourceUidFromUrl(core.GeometryPayloadType.MeshPointer,this.meshUrl);
 		byteOffset=core.put_uint64(dataView,byteOffset,resuid);
 
 		byteOffset=core.put_uint64(dataView,byteOffset,this.skeletonNodeID);
@@ -153,6 +153,22 @@ class MeshComponent extends Component
 		return byteOffset;
 	}
 };
+class TextCanvasComponent extends Component
+{
+    constructor()
+    {
+		super();
+		this.canvasPath="";
+    }
+	getType() {
+		return NodeDataType.TextCanvas;
+	}
+	encodeIntoDataView(dataView,byteOffset) {
+		byteOffset=core.put_uint8(dataView,byteOffset,NodeDataType.TextCanvas);
+		byteOffset=core.put_uint64(dataView,byteOffset,this.data_uid);
+		return byteOffset;
+	}
+};
 
 class SkeletonComponent extends Component
 {
@@ -165,67 +181,102 @@ class SkeletonComponent extends Component
 	}
 };
 
-class Node
-{
-    constructor(uid,name="")
-    {
-		this.uid=uid;
-		this.name=name;
-		this.pose=new Pose();
-		this.parent_uid=0;
+class Node {
+	constructor(uid, name = "") {
+		this.uid = uid;
+		this.name = name;
+		this.pose = new Pose();
+		this.parent_uid = 0;
 
-		this.holder_client_id=0;
-		this.stationary=true;
+		this.holder_client_id = 0;
+		this.stationary = true;
 
-		this.priority=0;
+		this.priority = 0;
 
 		this.components = [];
-    }
-    static sizeof() {
-        return 8+24+Pose.size+8;
-    }
-    size() {
-        return Node.sizeof();
-    }
+	}
+	static sizeof() {
+		return 8 + 24 + Pose.size + 8;
+	}
+	size() {
+		return Node.sizeof();
+	}
 	setMeshComponent(mesh_url) {
 		resources.AddMesh(mesh_url);
-		this.components.forEach(component => {
-			if(component.getType()==NodeDataType.Mesh) {
-				component.meshUrl=mesh_url;
-				component.data_uid=resources.GetResourceUidFromUrl(core.GeometryPayloadType.MeshPointer,mesh_url);
+		this.components.forEach((component) => {
+			if (component.getType() == NodeDataType.Mesh) {
+				component.meshUrl = mesh_url;
+				component.data_uid = resources.GetOrAddResourceUidFromUrl(
+					core.GeometryPayloadType.MeshPointer,
+					mesh_url
+				);
 				return;
 			}
 		});
-		var m=new MeshComponent();
-		m.meshUrl=mesh_url;
-		m.data_uid=resources.GetResourceUidFromUrl(core.GeometryPayloadType.MeshPointer,mesh_url);
+		var m = new MeshComponent();
+		m.meshUrl = mesh_url;
+		m.data_uid = resources.GetOrAddResourceUidFromUrl(
+			core.GeometryPayloadType.MeshPointer,
+			mesh_url
+		);
 		this.components.push(m);
 	}
-	setCanvasComponent(canvas_name) {
-		
+	setCanvasComponent(canvas_path) {
+		this. components.forEach((component) => {
+			if (component.getType() == NodeDataType.TextCanvas) {
+				component.canvasPath = canvas_path;
+				component.data_uid = resources.GetResourceUidFromUrl(
+					core.GeometryPayloadType.FontAtlas,
+					canvas_name
+				);
+				return;
+			}
+		});
+		var tc = new TextCanvasComponent();
+		tc.canvasPath = canvas_path;
+		tc.data_uid = resources.GetResourceUidFromUrl(
+			core.GeometryPayloadType.FontAtlas,
+			canvas_path
+		);
+		this.components.push(tc);
 	}
-	encodeIntoDataView(dataView,byteOffset) {
-		byteOffset=core.put_uint8(dataView,byteOffset,core.GeometryPayloadType.Node);
+	encodeIntoDataView(dataView, byteOffset) {
+		byteOffset = core.put_uint8(
+			dataView,
+			byteOffset,
+			core.GeometryPayloadType.Node
+		);
 
-		byteOffset=core.put_uint64(dataView,byteOffset,this.uid);
-		byteOffset=core.put_string(dataView,byteOffset,this.name);
-		var clientsidePose=this.pose;
-		//avs::ConvertTransform(serverSettings.serverAxesStandard, geometryStreamingService.getClientAxesStandard(), localTransform);
-		byteOffset=clientsidePose.encodeIntoDataView(dataView,byteOffset);
-		//put(node.localTransform);
-		byteOffset=core.put_uint8(dataView,byteOffset,this.stationary);
-		byteOffset=core.put_uint64(dataView,byteOffset,this.holder_client_id);
-		byteOffset=core.put_int32(dataView,byteOffset,this.priority);
-		byteOffset=core.put_uint64(dataView,byteOffset,this.parent_uid);
+		byteOffset = core.put_uint64(dataView, byteOffset, this.uid);
+		byteOffset = core.put_string(dataView, byteOffset, this.name);
+		var clientsidePose = this.pose;
+		
+		byteOffset = clientsidePose.encodeIntoDataView(dataView, byteOffset);
+		
+		byteOffset = core.put_uint8(dataView, byteOffset, this.stationary);
+		byteOffset = core.put_uint64(
+			dataView,
+			byteOffset,
+			this.holder_client_id
+		);
+		byteOffset = core.put_int32(dataView, byteOffset, this.priority);
+		byteOffset = core.put_uint64(dataView, byteOffset, this.parent_uid);
 
 		// Data components. Let's say 8 bits for number of components.
-		byteOffset=core.put_uint8(dataView,byteOffset,this.components.length);
-		for(var i=0;i<this.components.length;i++) {
-			byteOffset=this.components[i].encodeIntoDataView(dataView,byteOffset);
+		byteOffset = core.put_uint8(
+			dataView,
+			byteOffset,
+			this.components.length
+		);
+		for (var i = 0; i < this.components.length; i++) {
+			byteOffset = this.components[i].encodeIntoDataView(
+				dataView,
+				byteOffset
+			);
 		}
-		
+
 		return byteOffset;
-	/*
+		/*
 		if (this.data_type ==NodeDataType.Light)
 		{
 			put(this.lightColour);

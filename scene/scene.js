@@ -1,5 +1,6 @@
 'use strict';
 const fs = require('fs');
+var path = require('path');
 const nd = require('./node.js');
 const core = require('../core/core.js');
 const resources = require('./resources.js');
@@ -38,8 +39,17 @@ class Scene {
 		let node_uids = Array.from(this.nodes.keys());
 		return node_uids;
 	}
+	LoadFontAtlas(res, filename) {
+		const data = fs.readFileSync(filename, "utf8");
+		const jfa = JSON.parse(data);
+		for (var attrname in jfa)
+		{
+			res[attrname] = jfa[attrname];
+		}
+	}
 	//! Load an initial scene state from a json file.
 	Load(filename) {
+		const dir = path.dirname(filename).replaceAll("\\","/")+"/";
 		const data = fs.readFileSync(filename, "utf8");
 		const j = JSON.parse(data);
 		console.log(j);
@@ -59,6 +69,23 @@ class Scene {
 			{
 				this.specularCubemapPath=j.environment.specular_cubemap;
 				resources.AddTexture(this.specularCubemapPath);
+			}
+		}
+		if(j.font_atlases)
+		{
+			const j_fonts=j.font_atlases;
+			for (let sub_obj of j_fonts) {
+				var uid = resources.AddFontAtlas(sub_obj.path);
+				var f = resources.GetResourceFromUid(uid);
+				this.LoadFontAtlas(f,dir+sub_obj.path);
+				console.log(f.uid);
+			}
+		}
+		if(j.canvases)
+		{
+			const j_canvases=j.canvases;
+			for (let [key, sub_obj] of Object.entries(j_canvases)) {
+				var uid = resources.AddTextCanvas(key,sub_obj.font,sub_obj.lineHeight,sub_obj.content);
 			}
 		}
 		if(j.nodes)
@@ -84,8 +111,8 @@ class Scene {
 						}
 						if (c["type"] == "canvas")
 						{
-							var canvas={content:c["content"],};
-							n.setCanvasComponent(uid);
+							var canvas=c.url;
+							n.setCanvasComponent(canvas);
 						}
 					}
 				}

@@ -1,0 +1,2 @@
+
+{"sdp":"v=0\r\no=rtc 3209902504 0 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\na=msid-semantic:WMS *\r\na=setup:actpass\r\na=ice-ufrag:Ef8E\r\na=ice-pwd:vRnYVyM/w7vvHO5j2vW+Pq\r\na=ice-options:ice2,trickle\r\na=fingerprint:sha-256 1F:D4:D3:39:23:F8:C6:C1:25:29:71:BE:A3:99:58:D6:7D:CA:A9:2A:95:FE:99:59:92:52:7E:2F:2F:42:63:C1\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\nc=IN IP4 0.0.0.0\r\na=mid:0\r\na=sendrecv\r\na=sctp-port:5000\r\na=max-message-size:262144\r\n","teleport-signal-type":"offer"}

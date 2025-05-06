@@ -208,10 +208,20 @@ class Client {
 		{
 			this.SendNode(uid);
 		}
-		var mesh_uids=this.geometryService.GetMeshesToStream();
+		var mesh_uids=this.geometryService.GetMeshesToSend();
 		for (const uid of mesh_uids)
 		{
 			this.SendMesh(uid);
+		}
+		var canvases_to_send_now_uids=this.geometryService.GetCanvasesToSend();
+		for (const uid of canvases_to_send_now_uids)
+		{
+			this.SendCanvas(uid);
+		}
+		var font_atlases_to_send_now_uids=this.geometryService.GetFontAtlasesToSend();
+		for (const uid of font_atlases_to_send_now_uids)
+		{
+			this.SendFontAtlas(uid);
 		}
 		var textures_to_send_now_uids=this.geometryService.GetTexturesToSend();
 		for (const uid of textures_to_send_now_uids)
@@ -312,7 +322,7 @@ class Client {
 			console.warn("No resource of uid ",uid," was found.")
 			return;
 		}
-		const MAX_BUFFER_SIZE=500;
+		const MAX_BUFFER_SIZE=resource.encodedSize();;
 		const buffer = new ArrayBuffer(MAX_BUFFER_SIZE);
 		const resourceSize=resource_encoder.EncodeResource(resource,buffer);
 		this.geometryService.EncodedResource(uid);
@@ -325,6 +335,14 @@ class Client {
 		this.SendGenericResource(uid);
 	}
 	SendTexture(uid)
+	{
+		this.SendGenericResource(uid);
+	}
+	SendCanvas(uid)
+	{
+		this.SendGenericResource(uid);
+	}
+	SendFontAtlas(uid)
 	{
 		this.SendGenericResource(uid);
 	}
