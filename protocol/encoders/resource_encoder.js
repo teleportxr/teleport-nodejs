@@ -20,8 +20,10 @@ function EncodeResource(res,buffer)
 	byteOffset=putPlaceholderSize(dataView);
 	var t=res.encodeIntoDataView(dataView,byteOffset);
 	byteOffset=t;
+	t-=8;
 	// Actual size is now known so update payload size
-	dataView.setBigUint64(0,BigInt(byteOffset));
+	// The value to send is the offset minus the 8 bytes for the size we have at the front.
+	dataView.setBigUint64(0,BigInt(t));
 	return byteOffset;
 }
 module.exports= {EncodeResource};

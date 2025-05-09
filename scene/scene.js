@@ -42,16 +42,15 @@ class Scene {
 	LoadFontAtlas(res, filename) {
 		const data = fs.readFileSync(filename, "utf8");
 		const jfa = JSON.parse(data);
-		for (var attrname in jfa)
-		{
-			res[attrname] = jfa[attrname];
-		}
+		// jfa.fontMaps should be a Map, but JSON treats it as an object.
+		res.fontMaps = new Map(Object.entries(jfa.fontMaps));
+		console.log("FontAtlas, ",res.fontMaps.size," maps.");
 	}
 	//! Load an initial scene state from a json file.
 	Load(filename) {
 		const dir = path.dirname(filename).replaceAll("\\","/")+"/";
 		const data = fs.readFileSync(filename, "utf8");
-		const j = JSON.parse(data);
+		const j = JSON. parse(data);
 		console.log(j);
 		if(j.environment)
 		{
@@ -78,6 +77,9 @@ class Scene {
 				var uid = resources.AddFontAtlas(sub_obj.path);
 				var f = resources.GetResourceFromUid(uid);
 				this.LoadFontAtlas(f,dir+sub_obj.path);
+				f.font_texture_path=sub_obj.font_texture_path;
+				f.font_texture_uid=resources.GetOrAddResourceUidFromUrl(core.GeometryPayloadType.TexturePointer,f.font_texture_path);
+			
 				console.log(f.uid);
 			}
 		}

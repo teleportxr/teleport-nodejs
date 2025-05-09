@@ -35,16 +35,17 @@ class FontAtlas extends Resource {
 	constructor(uid, url) {
 		super(core.GeometryPayloadType.FontAtlas, uid, url);
 		this.font_texture_uid=0;
+		this.fontMaps=new Map();
 	}
 	encodedSize(){
 		const numMaps = this.fontMaps.size;
 		var sz=26;
-		for (let [key, fontMap] of Object.entries(this.fontMaps)) {
+		for (let [key, fontMap] of this.fontMaps) {
 			sz+=8;
 			const numGlyphs = fontMap.glyphs.length;
 			sz += numGlyphs * 28;
 		}
-		return sz+8;
+		return sz;
 	}
 
 	encodeIntoDataView(dataView, byteOffset) {
@@ -63,8 +64,7 @@ class FontAtlas extends Resource {
 		const numMaps = this.fontMaps.size;
 		byteOffset = core.put_uint8(dataView, byteOffset, numMaps);		// 26
 		
-
-		for (let [key, fontMap] of Object.entries(this.fontMaps)) {
+		for (let [key, fontMap] of this.fontMaps) {
 			byteOffset = core.put_uint16(dataView, byteOffset, key);	
 			byteOffset = core.put_float32(
 				dataView,
@@ -105,8 +105,7 @@ class FontAtlas extends Resource {
 				);
 			}
 		}
-
-		return byteOffset-8;
+		return byteOffset;
 	}
 }
 
@@ -122,13 +121,13 @@ class TextCanvas extends Resource {
 		byteOffset = core.put_uint64(dataView, byteOffset, this.uid);
 
 		byteOffset = core.put_uint64(dataView, byteOffset, this.fontAtlasUid);
-		byteOffset = core.put_int32(dataView, byteOffset, 64);
+		byteOffset = core.put_int32(dataView, byteOffset, 128);
 		byteOffset = core.put_float32(dataView, byteOffset, this.lineHeight);
 		const colour = new core.vec4();
-		colour.float_x = 1.0;
-		colour.float_y = 0.5;
-		colour.float_z = 0.0;
-		colour.float_w = 1.0;
+		colour.x = 1.0;
+		colour.y = 0.5;
+		colour.z = 0.0;
+		colour.w = 1.0;
 		byteOffset = core.put_vec4(dataView, byteOffset, colour);
 
 		byteOffset = core.put_string(dataView, byteOffset, this.content);
@@ -184,6 +183,8 @@ function GetOrAddResourceUidFromUrl(type, url){
 	var uid=GetResourceUidFromUrl(type, url);
 	if(uid!=0)
 		return uid;
+	if(!url)
+		return 0;
 	return AddResourceFromUrl(type, url);
 }
 
