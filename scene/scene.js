@@ -87,7 +87,10 @@ class Scene {
 		{
 			const j_canvases=j.canvases;
 			for (let [key, sub_obj] of Object.entries(j_canvases)) {
-				var uid = resources.AddTextCanvas(key,sub_obj.font,sub_obj.lineHeight,sub_obj.content);
+				var content = sub_obj.content
+				if(Array.isArray ( content))
+					content=sub_obj.content.join('\n');
+				var uid = resources.AddTextCanvas(key,sub_obj.font,sub_obj.lineHeight,content);
 			}
 		}
 		if(j.nodes)
