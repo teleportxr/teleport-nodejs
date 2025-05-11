@@ -43,7 +43,7 @@ class FontAtlas extends Resource {
 		for (let [key, fontMap] of this.fontMaps) {
 			sz+=8;
 			const numGlyphs = fontMap.glyphs.length;
-			sz += numGlyphs * 28;
+			sz += numGlyphs * 30;
 		}
 		return sz;
 	}
@@ -74,6 +74,7 @@ class FontAtlas extends Resource {
 			const numGlyphs = fontMap.glyphs.length;
 			byteOffset = core.put_uint16(dataView, byteOffset, numGlyphs);	// 8
 			for (let glyph of fontMap.glyphs) {
+				byteOffset = core.put_uint16(dataView, byteOffset, glyph.indexInCharset);
 				byteOffset = core.put_uint16(dataView, byteOffset, glyph.x0); // g * 28
 				byteOffset = core.put_uint16(dataView, byteOffset, glyph.y0);
 				byteOffset = core.put_uint16(dataView, byteOffset, glyph.x1);

@@ -1,11 +1,13 @@
 {
   "dependencies": {
+    "@lightningjs/msdf-generator": "^1.1.1",
+    "@roamhq/wrtc": "^0.8.0",
     "bitset": "^5.2.3",
     "get-current-line": "^7.4.0",
     "microtime": "^3.1.1",
+    "msdf-bmfont-xml": "^2.7.0",
     "underscore": "^1.13.7",
     "uuid": "^9.0.1",
-    "@roamhq/wrtc": "^0.8.0",
     "ws": "^8.13.0"
   },
   "scripts": {
@@ -26,12 +28,11 @@
   "homepage": "https://github.com/simul/teleport-nodejs#readme",
   "exports": {
     ".": "./index.js",
-	"./signaling": "./signaling.js",
-	"./client/client_manager": "./client/client_manager.js",
+    "./signaling": "./signaling.js",
+    "./client/client_manager": "./client/client_manager.js",
     "./connections/webrtcconnectionmanager": "./connections/webrtcconnectionmanager.js",
-	"./scene/scene":"./scene/scene.js",
-	"./scene/resources":"./scene/resources.js"
+    "./scene/scene": "./scene/scene.js",
+    "./scene/resources": "./scene/resources.js"
   },
-  "publishConfig": {
-  }
+  "publishConfig": {}
 }
