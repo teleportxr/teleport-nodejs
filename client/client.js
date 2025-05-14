@@ -66,7 +66,7 @@ class Client {
     }
 	receivedMessageReliable(id,data)
 	{
-		console.log('Client receivedMessage unreliable ch.'+id+' received: '+data+'.');
+		console.log('Client receivedMessage reliable ch.'+id+' received: '+data+'.');
 	}
 	// Is the Buffer bf too small to contain a type tp?
 	checkTooSmall(tp,bf) {
@@ -102,7 +102,6 @@ class Client {
 	}
 	receivedMessageUnreliable(id,pkt)
 	{
-
         var dataView=new DataView(pkt.data,0,1);
         const messageType=dataView.getUint8(0);
 		//console.log('Client receivedMessage reliable ch.'+id+' received: '+messageType+'.');
@@ -112,6 +111,9 @@ class Client {
                 return;
 			case message.MessagePayloadType.Acknowledgement:
 				this.ReceiveAcknowledgement(pkt.data);
+				return;
+			case message.MessagePayloadType.ControllerPoses:
+				this.ReceiveNodePoses(pkt.data);
 				return;
             default:
                 break;
@@ -177,7 +179,6 @@ class Client {
 		}
         var msg				=new message.AcknowledgementMessage();
 		var bf				=data;
-		var uia				=new Uint8Array(bf);
 		var dataView		=new DataView(data,0,data.length);
 		core.decodeFromDataView(msg,dataView,0);
 		if(msg.uint64_ackId==this.currentOriginState.ackId)
@@ -188,6 +189,35 @@ class Client {
 		{
 			this.currentLightingState.acknowledged=true;
 		}
+	}
+	ReceiveNodePoses(data)
+	{
+		if (data.byteLength<message.NodePosesMessage.sizeof())
+		{
+			console.log("Client: Received malformed NodePosesMessage packet of length: ",data.length);
+			return;
+		}
+        var msg			=new message.NodePosesMessage();
+		var dataView	=new DataView(data,0,data.byteLength);
+		var byteOffset	=0;
+		msg.messageType = dataView.getUint8(byteOffset, core.endian);
+		msg.timestamp = dataView.getBigUint64(byteOffset+1, core.endian);
+		byteOffset		=msg.Pose_headPose.decodeOrientationPositionFromDataView(msg,dataView, byteOffset+9);
+		msg.uint16_numPoses = dataView.getUint16(byteOffset, core.endian);
+		byteOffset+=2;
+		if (data.byteLength!=message.NodePosesMessage.sizeof()+msg.uint16_numPoses*28)
+		{
+			console.log("Client: Received malformed NodePosesMessage packet of length: ",data.length);
+			return;
+		}
+		msg.nodePoses = new Array(msg.uint16_numPoses);
+		for(let i=0; i <msg.uint16_numPoses; i++)
+		{
+			msg.nodePoses[i] = new NodePoseDynamic();
+			byteOffset = msg.nodePoses[i].decodeOrientationPositionFromDataView(dataView,byteOffset);
+		}
+		console.log("Client: Received ", msg.uint16_numPoses, " node poses.");
+		this.ProcessNodePoses(msg.Pose_headPose,msg.uint16_numPoses, msg.nodePoses)
 	}
 	UpdateStreaming()
 	{

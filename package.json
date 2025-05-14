@@ -29,9 +29,11 @@
   "exports": {
     ".": "./index.js",
     "./signaling": "./signaling.js",
+    "./client/client": "./client/client.js",
     "./client/client_manager": "./client/client_manager.js",
     "./connections/webrtcconnectionmanager": "./connections/webrtcconnectionmanager.js",
     "./scene/scene": "./scene/scene.js",
+    "./scene/node": "./scene/node.js",
     "./scene/resources": "./scene/resources.js"
   },
   "publishConfig": {}

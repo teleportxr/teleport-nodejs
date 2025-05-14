@@ -48,7 +48,18 @@ class Pose
 		this.encodeIntoDataView(dataView);
 		return array;
 	}
+	decodeOrientationPositionFromDataView( dataView, byteOffset) {
+		this.orientation.x = dataView.getFloat32(byteOffset, core.endian);
+		this.orientation.y = dataView.getFloat32(byteOffset+4, core.endian);
+		this.orientation.z = dataView.getFloat32(byteOffset+8, core.endian);
+		this.orientation.w = dataView.getFloat32(byteOffset+12, core.endian);
+		this.position.x = dataView.getFloat32(byteOffset+16, core.endian);
+		this.position.y = dataView.getFloat32(byteOffset+20, core.endian);
+		this.position.z = dataView.getFloat32(byteOffset+24, core.endian);
+		return byteOffset+28;
+	}
 };
+
 class PoseDynamic
 {
 	constructor(){
@@ -82,8 +93,42 @@ class PoseDynamic
 		dataView.setFloat32(byteOffset+60,this.angularVelocity.z,core.endian);
 		return byteOffset+64;
 	}
+	decodeOrientationPositionVelAngVelFromDataView( dataView, byteOffset) {
+		this.orientation.x = dataView.getFloat32(byteOffset, core.endian);
+		this.orientation.y = dataView.getFloat32(byteOffset+4, core.endian);
+		this.orientation.z = dataView.getFloat32(byteOffset+8, core.endian);
+		this.orientation.w = dataView.getFloat32(byteOffset+12, core.endian);
+		this.position.x = dataView.getFloat32(byteOffset+16, core.endian);
+		this.position.y = dataView.getFloat32(byteOffset+20, core.endian);
+		this.position.z = dataView.getFloat32(byteOffset+24, core.endian);
+		this.velocity.x = dataView.getFloat32(byteOffset+28, core.endian);
+		this.velocity.y = dataView.getFloat32(byteOffset+32, core.endian);
+		this.velocity.z = dataView.getFloat32(byteOffset+36, core.endian);
+		this.angularVelocity.x = dataView.getFloat32(byteOffset+40, core.endian);
+		this.angularVelocity.y = dataView.getFloat32(byteOffset+44, core.endian);
+		this.angularVelocity.z = dataView.getFloat32(byteOffset+48, core.endian);
+		return byteOffset+28;
+	}
 };
 
+class NodePoseDynamic extends PoseDynamic
+{
+	constructor(){
+		super();
+		this.uid = BigInt(0);
+	}
+    static sizeof(){
+        return PoseDynamic.sizeof()+8;
+    }
+    size(){
+        return NodePoseDynamic.sizeof();
+    }
+	decodeFromDataView(dataView, byteOffset) {
+		this.uid = dataView.getBigInt64(byteOffset, core.endian);
+		this.decodeOrientationPositionVelAngVelFromDataView(dataView,byteOffset+8)
+		return byteOffset+28;
+	}
+}
 
 class RenderState
 {
@@ -182,8 +227,8 @@ class SkeletonComponent extends Component
 };
 
 class Node {
-	constructor(uid, name = "") {
-		this.uid = uid;
+	constructor( name = "") {
+		this.uid = core.generateUid();
 		this.name = name;
 		this.pose = new Pose();
 		this.parent_uid = 0;
@@ -307,4 +352,4 @@ class Node {
 	}
 };
 
-module.exports = {NodeDataType,Pose,PoseDynamic,Node };
+module.exports = {NodeDataType,Pose,PoseDynamic,NodePoseDynamic, Node };

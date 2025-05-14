@@ -31,11 +31,14 @@ class Scene {
 		return c;
 	}
 	CreateNode(name) {
-		var uid = core.generateUid();
+		return this.InsertNode(new nd.Node(name));
+	}
+	InsertNode(newNode) {
+		var uid = newNode.uid;
 		if (this.nodes.has(uid)) {
 			error("Uid " + uid + " already present.");
 		}
-		this.nodes.set(uid, new nd.Node(uid, name));
+		this.nodes.set(uid, newNode);
 		return uid;
 	}
 	GetAllNodeUids() {

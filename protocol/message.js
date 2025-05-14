@@ -1,6 +1,7 @@
 'use strict';
 const core= require("../core/core.js");
 const command= require("./command");
+const node= require("../scene/node.js");
 
 function decodeFromDataView(obj,dataView,byteOffset){
     for (let key of Object.keys(obj)) {
@@ -40,7 +41,7 @@ function decodeFromDataView(obj,dataView,byteOffset){
         }
         else if(tp=="uint64")
         {
-            var value=dataView.get4BigUint6(byteOffset);
+            var value=dataView.getBigUint64(byteOffset);
             Object.entries[key]=value;
         }
         else if(tp=="struct")
@@ -75,6 +76,9 @@ class Message{
 	constructor(){
         this.MessagePayloadType_messagePayloadType=MessagePayloadType.Invalid;
         this.int64_timestamp=BigInt(0);
+    }
+    static sizeof(){
+        return 9;
     }
 }
 
@@ -124,6 +128,28 @@ class ReceivedResourcesMessage extends Message
         return ReceivedResourcesMessage.sizeof();
     }
 };
+
+class NodePosesMessage extends Message
+{
+    constructor(){
+        super();
+        //   type=1 byte
+        this.MessagePayloadType_messagePayloadType=MessagePayloadType.ControllerPoses;
+		// timestamp 8 bytes.
+		// count 8 bytes
+        this.Pose_headPose=new node.Pose();
+	//! Poses of the nodes.
+		this.uint16_numPoses=0;
+		this.nodePoses=[];
+    }
+    static sizeof(){
+        return Message.sizeof()+28+2;
+    }
+    size(){
+        return ReceivedResourcesMessage.sizeof();
+    }
+};
+
 class AcknowledgementMessage extends Message
 {
     constructor(){
@@ -142,4 +168,4 @@ class AcknowledgementMessage extends Message
         return AcknowledgementMessage.sizeof();
     }
 };
-module.exports= {Message,MessagePayloadType,HandshakeMessage,ReceivedResourcesMessage,AcknowledgementMessage};
+module.exports= {Message,MessagePayloadType,HandshakeMessage,ReceivedResourcesMessage,NodePosesMessage,AcknowledgementMessage};

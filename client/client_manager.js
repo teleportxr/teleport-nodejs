@@ -11,12 +11,11 @@ class ClientManager
     constructor()
     {
 		this.clients= new Map();
-		this.addNewClientAndReturnOriginUid=null;
+		this.addClientNodeAndReturnOriginUid=null;
 		this.onClientPostCreate=null;
 		this.geometryIntervalId=0;
 		let unixt_us=core.getStartTimeUnixUs();
 		console.log("Start Time: "+unixt_us+" us = "+core.unixTimeToUTCString(unixt_us)+"\n");
-		//console.log("From Date: "+Date.now()*1000+"\n");
     }
 	
 	StartStreaming(){
@@ -29,7 +28,7 @@ class ClientManager
 		if(this.geometryIntervalId!=0)
 			clearInterval(this.geometryIntervalId);
 	}
-	UpdateStreaming(){
+	UpdateStreaming() {
 		for (let [cl_id,cl] of this.clients) {
 			cl.UpdateStreaming();
 		}
@@ -38,18 +37,18 @@ class ClientManager
     {
         if(!this.clients.has(clientID))
         {
-			if(this.addNewClientAndReturnOriginUid==null){
+			if(this.addClientNodeAndReturnOriginUid==null){
 				error("No callback has been set to create the client origin.");
 				return null;
 			}
-			var origin_uid=this.addNewClientAndReturnOriginUid(clientID);
+			var origin_uid=this.addClientNodeAndReturnOriginUid(clientID);
 			if(origin_uid==0){
 				error("Failed to create a root node for client "+clientID);
 				return null;
 			}
 			var sigCli=signaling.signalingClients.get(clientID);
 			var sigSend=sigCli.sendToClient.bind(sigCli);
-			var c=new client.Client(clientID,sigSend);
+			var c=this.createClient(clientID,sigSend);
 			c.setOrigin(origin_uid);
 			if(this.clients.size==0)
 				this.StartStreaming();
@@ -77,9 +76,13 @@ class ClientManager
         var c=this.clients.get(clientID);
         return c;
     }
-	SetNewClientCallback(cb)
+	SetNewClientNodeCallback(cb)
 	{
-		this.addNewClientAndReturnOriginUid=cb;
+		this.addClientNodeAndReturnOriginUid=cb;
+	}
+	SetCreateClientCallback(cb)
+	{
+		this.createClient=cb;
 	}
 	SetClientPostCreationCallback(cb)
 	{
