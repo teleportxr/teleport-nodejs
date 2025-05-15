@@ -30,6 +30,13 @@ class Scene {
 		var c = this.nodes.get(uid);
 		return c;
 	}
+	GetNodeUidByName(name){
+		for( let [uid,node] of this.nodes){
+			if (node.name==name)
+				return uid;
+		}
+		return 0;
+	}
 	CreateNode(name) {
 		return this.InsertNode(new nd.Node(name));
 	}

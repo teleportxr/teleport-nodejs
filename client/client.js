@@ -202,7 +202,7 @@ class Client {
 		var byteOffset	=0;
 		msg.messageType = dataView.getUint8(byteOffset, core.endian);
 		msg.timestamp = dataView.getBigUint64(byteOffset+1, core.endian);
-		byteOffset		=msg.Pose_headPose.decodeOrientationPositionFromDataView(msg,dataView, byteOffset+9);
+		byteOffset		=msg.Pose_headPose.decodeOrientationPositionFromDataView(dataView, byteOffset+9);
 		msg.uint16_numPoses = dataView.getUint16(byteOffset, core.endian);
 		byteOffset+=2;
 		if (data.byteLength!=message.NodePosesMessage.sizeof()+msg.uint16_numPoses*28)
@@ -216,8 +216,12 @@ class Client {
 			msg.nodePoses[i] = new NodePoseDynamic();
 			byteOffset = msg.nodePoses[i].decodeOrientationPositionFromDataView(dataView,byteOffset);
 		}
-		console.log("Client: Received ", msg.uint16_numPoses, " node poses.");
-		this.ProcessNodePoses(msg.Pose_headPose,msg.uint16_numPoses, msg.nodePoses)
+		//console.log("Client: Received ", msg.uint16_numPoses, " node poses.");
+		this.ProcessNodePoses(msg.Pose_headPose,msg.uint16_numPoses, msg.nodePoses);
+	}
+	ProcessNodePoses(headPose,numPoses,nodePoses)
+	{
+		console.log("Client: ProcessNodePoses ", numPoses, " poses.");
 	}
 	UpdateStreaming()
 	{

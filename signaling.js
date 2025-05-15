@@ -3,7 +3,7 @@ const getcurrentline = require("get-current-line").default;
 
 // Importing the required modules
 const WebSocketServer = require("ws");
-const core=require("./core/core.js");
+const core = require("./core/core.js");
 
 class SignalingState {
 	static START = new SignalingState("Start");
@@ -20,6 +20,7 @@ class SignalingState {
 		return `SignalingState.${this.name}`;
 	}
 }
+var serverID=BigInt(0n);
 
 class SignalingClient { 
 	constructor(ip, ws, id) {
@@ -65,9 +66,9 @@ function sendResponseToClient(clientID) {
         var signalingClient=signalingClients.get(clientID);
 		// First, we send the WebSockets signaling response.
 		var txt =
-			'{"teleport-signal-type":"request-response","content":{"clientID": ' +
-			signalingClient.clientID +
-			'}}';
+			'{"teleport-signal-type":"request-response",'
+			+`"content":{"clientID": ${signalingClient.clientID},`
+			+`"serverID": ${serverID}}}`;
 		signalingClient.ws.send(txt);
 	}
 }
@@ -221,7 +222,8 @@ function OnWebSocket(ws, req) {
 		console.log("Some Error occurred");
 	};
 }
-exports.init = function (webRtcCM, newClientFn, disconnectClientFn, signaling_port) {
+exports.init = function (server_id, webRtcCM, newClientFn, disconnectClientFn, signaling_port) {
+	serverID = server_id;
 	// Creating a new websocket server
 	// const signaling_port = process.env.PORT || 8081;
 	var wss;
@@ -240,7 +242,7 @@ exports.init = function (webRtcCM, newClientFn, disconnectClientFn, signaling_po
 	wss.on("connection", (ws, req) => {
 		OnWebSocket(ws, req);
 	});
-	console.log("The WebSockets Signaling Server is running: " + JSON.stringify(wss.options));
+	console.log("The WebSockets Signaling Server {"+serverID+"} is running: " + JSON.stringify(wss.options));
 	return wss;
 };
 exports.sendConfigMessage = function (clientID, msg) {

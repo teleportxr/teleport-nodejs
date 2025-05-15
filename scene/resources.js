@@ -125,8 +125,8 @@ class TextCanvas extends Resource {
 		byteOffset = core.put_int32(dataView, byteOffset, 128);
 		byteOffset = core.put_float32(dataView, byteOffset, this.lineHeight);
 		const colour = new core.vec4();
-		colour.x = 1.0;
-		colour.y = 0.5;
+		colour.x = 0.6;
+		colour.y = 0.3;
 		colour.z = 0.0;
 		colour.w = 1.0;
 		byteOffset = core.put_vec4(dataView, byteOffset, colour);

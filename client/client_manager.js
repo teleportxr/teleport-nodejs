@@ -89,7 +89,7 @@ class ClientManager
 		this.onClientPostCreate=cb;
 	}
 	// This is a callback, signaling service calls this when the client has signalled.
-	newClient(clientID,signalingClient) {
+	newClient(clientID, signalingClient) {
 		// then we tell the client manager to start this client.
 		var c=this.GetOrCreateClient(clientID);
 		signalingClient.receiveReliableBinaryMessage=c.receiveReliableBinaryMessage.bind(c);
