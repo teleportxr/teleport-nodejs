@@ -437,7 +437,29 @@ class FbxToVrmaConverter {
             return;
         }
         
+        // Create glTF 2.0 compliant structure
         const vrmaData = {
+            asset: {
+                generator: "FBX to VRMA Converter",
+                version: "2.0"
+            },
+            scene: 0,
+            scenes: [
+                {
+                    name: "Scene"
+                }
+            ],
+            nodes: [],
+            animations: [
+                {
+                    name: "Animation",
+                    channels: [],
+                    samplers: []
+                }
+            ],
+            accessors: [],
+            bufferViews: [],
+            buffers: [],
             extensionsUsed: ["VRMC_vrm_animation"],
             extensions: {
                 VRMC_vrm_animation: {
@@ -446,15 +468,13 @@ class FbxToVrmaConverter {
                         humanBones: {}
                     }
                 }
-            },
-            accessors: [],
-            bufferViews: [],
-            buffers: []
+            }
         };
 
         const bufferData = [];
         let bufferOffset = 0;
         let accessorIndex = 0;
+        let samplerIndex = 0;
 
         // Process each bone
         for (const [vrmBoneName, boneData] of Object.entries(animationData)) {
@@ -474,6 +494,7 @@ class FbxToVrmaConverter {
                 
                 vrmaData.accessors.push({
                     bufferView: vrmaData.bufferViews.length,
+                    byteOffset: 0,
                     componentType: 5126, // FLOAT
                     count: times.length,
                     type: "SCALAR",
@@ -484,7 +505,8 @@ class FbxToVrmaConverter {
                 vrmaData.bufferViews.push({
                     buffer: 0,
                     byteOffset: bufferOffset,
-                    byteLength: timeBuffer.length
+                    byteLength: timeBuffer.length,
+                    target: undefined // No target for animation data
                 });
                 
                 const timeAccessorIndex = accessorIndex++;
@@ -507,20 +529,34 @@ class FbxToVrmaConverter {
                 
                 vrmaData.accessors.push({
                     bufferView: vrmaData.bufferViews.length,
+                    byteOffset: 0,
                     componentType: 5126, // FLOAT
                     count: times.length,
-                    type: "VEC4"
+                    type: "VEC4",
+                    min: undefined, // Optional for rotations
+                    max: undefined
                 });
                 
                 vrmaData.bufferViews.push({
                     buffer: 0,
                     byteOffset: bufferOffset,
-                    byteLength: rotationBuffer.length
+                    byteLength: rotationBuffer.length,
+                    target: undefined
                 });
                 
                 const rotationAccessorIndex = accessorIndex++;
                 bufferOffset += rotationBuffer.length;
                 
+                // Add to glTF animation
+                vrmaData.animations[0].samplers.push({
+                    input: timeAccessorIndex,
+                    output: rotationAccessorIndex,
+                    interpolation: "LINEAR"
+                });
+                
+                const rotationSamplerIndex = samplerIndex++;
+                
+                // Store for VRM extension
                 humanBone.rotation = {
                     input: timeAccessorIndex,
                     output: rotationAccessorIndex,
@@ -541,6 +577,7 @@ class FbxToVrmaConverter {
                 
                 vrmaData.accessors.push({
                     bufferView: vrmaData.bufferViews.length,
+                    byteOffset: 0,
                     componentType: 5126,
                     count: times.length,
                     type: "SCALAR",
@@ -551,7 +588,8 @@ class FbxToVrmaConverter {
                 vrmaData.bufferViews.push({
                     buffer: 0,
                     byteOffset: bufferOffset,
-                    byteLength: timeBuffer.length
+                    byteLength: timeBuffer.length,
+                    target: undefined
                 });
                 
                 const timeAccessorIndex = accessorIndex++;
@@ -572,20 +610,34 @@ class FbxToVrmaConverter {
                 
                 vrmaData.accessors.push({
                     bufferView: vrmaData.bufferViews.length,
+                    byteOffset: 0,
                     componentType: 5126,
                     count: times.length,
-                    type: "VEC3"
+                    type: "VEC3",
+                    min: undefined, // Could calculate bounds if needed
+                    max: undefined
                 });
                 
                 vrmaData.bufferViews.push({
                     buffer: 0,
                     byteOffset: bufferOffset,
-                    byteLength: translationBuffer.length
+                    byteLength: translationBuffer.length,
+                    target: undefined
                 });
                 
                 const translationAccessorIndex = accessorIndex++;
                 bufferOffset += translationBuffer.length;
                 
+                // Add to glTF animation
+                vrmaData.animations[0].samplers.push({
+                    input: timeAccessorIndex,
+                    output: translationAccessorIndex,
+                    interpolation: "LINEAR"
+                });
+                
+                const translationSamplerIndex = samplerIndex++;
+                
+                // Store for VRM extension
                 humanBone.translation = {
                     input: timeAccessorIndex,
                     output: translationAccessorIndex,
@@ -601,9 +653,19 @@ class FbxToVrmaConverter {
 
         // Combine all buffer data
         const combinedBuffer = Buffer.concat(bufferData);
-        vrmaData.buffers.push({
-            byteLength: combinedBuffer.length
-        });
+        
+        // Update buffer definition
+        if (combinedBuffer.length > 0) {
+            vrmaData.buffers.push({
+                byteLength: combinedBuffer.length,
+                uri: `${path.basename(outputPath, '.vrma')}.bin`
+            });
+        }
+
+        // Clean up empty arrays if no animation data
+        if (vrmaData.animations[0].channels.length === 0 && vrmaData.animations[0].samplers.length === 0) {
+            delete vrmaData.animations;
+        }
 
         // Write VRMA file
         const vrmaJson = JSON.stringify(vrmaData, null, 2);
@@ -614,11 +676,15 @@ class FbxToVrmaConverter {
         fs.writeFileSync(outputPath, vrmaJson);
         
         // Write binary buffer
-        const binPath = path.join(outputDir, `${baseName}.bin`);
-        fs.writeFileSync(binPath, combinedBuffer);
+        if (combinedBuffer.length > 0) {
+            const binPath = path.join(outputDir, `${baseName}.bin`);
+            fs.writeFileSync(binPath, combinedBuffer);
+        }
 
         console.log(`\nVRMA file written to: ${outputPath}`);
-        console.log(`Binary buffer written to: ${binPath}`);
+        if (combinedBuffer.length > 0) {
+            console.log(`Binary buffer written to: ${baseName}.bin`);
+        }
         console.log(`Animated bones: ${Object.keys(vrmaData.extensions.VRMC_vrm_animation.humanoid.humanBones).length}`);
     }
 
