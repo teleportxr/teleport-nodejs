@@ -681,11 +681,70 @@ class FbxToVrmaConverter {
             fs.writeFileSync(binPath, combinedBuffer);
         }
 
+        // Create GLB file
+        this.CreateGlbFile(vrmaData, combinedBuffer, outputDir, baseName);
+
         console.log(`\nVRMA file written to: ${outputPath}`);
         if (combinedBuffer.length > 0) {
             console.log(`Binary buffer written to: ${baseName}.bin`);
         }
+        console.log(`GLB file written to: ${baseName}.glb`);
         console.log(`Animated bones: ${Object.keys(vrmaData.extensions.VRMC_vrm_animation.humanoid.humanBones).length}`);
+    }
+
+    CreateGlbFile(gltfData, binaryBuffer, outputDir, baseName) {
+        // Remove the uri from buffer definition for GLB
+        const glbData = JSON.parse(JSON.stringify(gltfData)); // Deep clone
+        if (glbData.buffers && glbData.buffers.length > 0) {
+            delete glbData.buffers[0].uri;
+        }
+
+        // Convert JSON to buffer
+        const jsonString = JSON.stringify(glbData);
+        const jsonBuffer = Buffer.from(jsonString, 'utf8');
+
+        // Pad JSON chunk to 4-byte boundary
+        const jsonPadding = (4 - (jsonBuffer.length % 4)) % 4;
+        const jsonChunk = Buffer.concat([
+            jsonBuffer,
+            Buffer.alloc(jsonPadding, 0x20) // Space character for JSON padding
+        ]);
+
+        // Pad binary chunk to 4-byte boundary
+        const binPadding = (4 - (binaryBuffer.length % 4)) % 4;
+        const binChunk = Buffer.concat([
+            binaryBuffer,
+            Buffer.alloc(binPadding, 0x00) // Null bytes for binary padding
+        ]);
+
+        // GLB Header
+        const glbHeader = Buffer.alloc(12);
+        glbHeader.writeUInt32LE(0x46546C67, 0); // Magic: "glTF"
+        glbHeader.writeUInt32LE(2, 4); // Version: 2
+        glbHeader.writeUInt32LE(12 + 8 + jsonChunk.length + 8 + binChunk.length, 8); // Total length
+
+        // JSON chunk header
+        const jsonChunkHeader = Buffer.alloc(8);
+        jsonChunkHeader.writeUInt32LE(jsonChunk.length, 0); // Chunk length
+        jsonChunkHeader.writeUInt32LE(0x4E4F534A, 4); // Chunk type: "JSON"
+
+        // Binary chunk header
+        const binChunkHeader = Buffer.alloc(8);
+        binChunkHeader.writeUInt32LE(binChunk.length, 0); // Chunk length
+        binChunkHeader.writeUInt32LE(0x004E4942, 4); // Chunk type: "BIN\0"
+
+        // Combine all parts
+        const glb = Buffer.concat([
+            glbHeader,
+            jsonChunkHeader,
+            jsonChunk,
+            binChunkHeader,
+            binChunk
+        ]);
+
+        // Write GLB file
+        const glbPath = path.join(outputDir, `${baseName}.glb`);
+        fs.writeFileSync(glbPath, glb);
     }
 
     EulerToQuaternion(x, y, z) {
