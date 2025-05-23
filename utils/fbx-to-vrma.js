@@ -2,56 +2,81 @@ const fs = require('fs');
 const path = require('path');
 
 // Mixamo bone mapping to VRM bones
-const mixamorig='mixamorig7';
 const boneMapping = {
-    // Core bones
+    // Core bones - with numbered prefix
     'mixamorig7:Hips': 'hips',
-    'Hips': 'hips',
     'mixamorig7:Spine': 'spine',
-    'Spine': 'spine',
     'mixamorig7:Spine1': 'chest',
-    'Spine1': 'chest',
     'mixamorig7:Spine2': 'upperChest',
-    'Spine2': 'upperChest',
     'mixamorig7:Neck': 'neck',
-    'Neck': 'neck',
     'mixamorig7:Head': 'head',
-    'Head': 'head',
     
-    // Arms
+    // Arms - with numbered prefix
     'mixamorig7:LeftShoulder': 'leftShoulder',
-    'LeftShoulder': 'leftShoulder',
     'mixamorig7:LeftArm': 'leftUpperArm',
-    'LeftArm': 'leftUpperArm',
     'mixamorig7:LeftForeArm': 'leftLowerArm',
-    'LeftForeArm': 'leftLowerArm',
     'mixamorig7:LeftHand': 'leftHand',
-    'LeftHand': 'leftHand',
     'mixamorig7:RightShoulder': 'rightShoulder',
-    'RightShoulder': 'rightShoulder',
     'mixamorig7:RightArm': 'rightUpperArm',
-    'RightArm': 'rightUpperArm',
     'mixamorig7:RightForeArm': 'rightLowerArm',
-    'RightForeArm': 'rightLowerArm',
     'mixamorig7:RightHand': 'rightHand',
-    'RightHand': 'rightHand',
     
-    // Legs
+    // Legs - with numbered prefix
     'mixamorig7:LeftUpLeg': 'leftUpperLeg',
-    'LeftUpLeg': 'leftUpperLeg',
     'mixamorig7:LeftLeg': 'leftLowerLeg',
-    'LeftLeg': 'leftLowerLeg',
     'mixamorig7:LeftFoot': 'leftFoot',
-    'LeftFoot': 'leftFoot',
     'mixamorig7:LeftToeBase': 'leftToes',
-    'LeftToeBase': 'leftToes',
     'mixamorig7:RightUpLeg': 'rightUpperLeg',
-    'RightUpLeg': 'rightUpperLeg',
     'mixamorig7:RightLeg': 'rightLowerLeg',
-    'RightLeg': 'rightLowerLeg',
     'mixamorig7:RightFoot': 'rightFoot',
-    'RightFoot': 'rightFoot',
     'mixamorig7:RightToeBase': 'rightToes',
+    
+    // Legacy mappings (without number)
+    'mixamorig:Hips': 'hips',
+    'mixamorig:Spine': 'spine',
+    'mixamorig:Spine1': 'chest',
+    'mixamorig:Spine2': 'upperChest',
+    'mixamorig:Neck': 'neck',
+    'mixamorig:Head': 'head',
+    'mixamorig:LeftShoulder': 'leftShoulder',
+    'mixamorig:LeftArm': 'leftUpperArm',
+    'mixamorig:LeftForeArm': 'leftLowerArm',
+    'mixamorig:LeftHand': 'leftHand',
+    'mixamorig:RightShoulder': 'rightShoulder',
+    'mixamorig:RightArm': 'rightUpperArm',
+    'mixamorig:RightForeArm': 'rightLowerArm',
+    'mixamorig:RightHand': 'rightHand',
+    'mixamorig:LeftUpLeg': 'leftUpperLeg',
+    'mixamorig:LeftLeg': 'leftLowerLeg',
+    'mixamorig:LeftFoot': 'leftFoot',
+    'mixamorig:LeftToeBase': 'leftToes',
+    'mixamorig:RightUpLeg': 'rightUpperLeg',
+    'mixamorig:RightLeg': 'rightLowerLeg',
+    'mixamorig:RightFoot': 'rightFoot',
+    'mixamorig:RightToeBase': 'rightToes',
+    
+    // Generic mappings (no prefix)
+    'Hips': 'hips',
+    'Spine': 'spine',
+    'Spine1': 'chest',
+    'Spine2': 'upperChest',
+    'Neck': 'neck',
+    'Head': 'head',
+    'LeftShoulder': 'leftShoulder',
+    'LeftArm': 'leftUpperArm',
+    'LeftForeArm': 'leftLowerArm',
+    'LeftHand': 'leftHand',
+    'RightShoulder': 'rightShoulder',
+    'RightArm': 'rightUpperArm',
+    'RightForeArm': 'rightLowerArm',
+    'RightHand': 'rightHand',
+    'LeftUpLeg': 'leftUpperLeg',
+    'LeftLeg': 'leftLowerLeg',
+    'LeftFoot': 'leftFoot',
+    'LeftToeBase': 'leftToes',
+    'RightUpLeg': 'rightUpperLeg',
+    'RightLeg': 'rightLowerLeg',
+    'RightFoot': 'rightFoot',
     'RightToeBase': 'rightToes'
 };
 
@@ -69,6 +94,29 @@ class FbxToVrmaConverter {
         this.connections = [];
         this.animationLength = 0;
         this.fps = 30;
+    }
+
+    // Helper function to map bone names flexibly
+    GetVrmBoneName(fbxBoneName) {
+        // Direct lookup first
+        if (boneMapping[fbxBoneName]) {
+            return boneMapping[fbxBoneName];
+        }
+        
+        // Try stripping mixamorig number prefix
+        const strippedName = fbxBoneName.replace(/^mixamorig\d+:/, '');
+        
+        // Try with generic mapping
+        if (boneMapping[strippedName]) {
+            return boneMapping[strippedName];
+        }
+        
+        // Try with mixamorig: prefix
+        if (boneMapping['mixamorig:' + strippedName]) {
+            return boneMapping['mixamorig:' + strippedName];
+        }
+        
+        return null;
     }
 
     ParseFbxFile(filePath) {
@@ -116,7 +164,6 @@ class FbxToVrmaConverter {
         return this.BuildAnimationStructure();
     }
 
-
     ParseObjectsSection(lines, startIndex) {
         const line = lines[startIndex];
         const trimmedLine = line.trim();
@@ -127,6 +174,7 @@ class FbxToVrmaConverter {
             if (match) {
                 const id = match[1];
                 const name = match[2];
+                
                 this.objects.models[id] = { id, name, type: 'Model' };
             }
             return startIndex + 1;
@@ -138,11 +186,22 @@ class FbxToVrmaConverter {
             if (match) {
                 const id = match[1];
                 const name = match[2] || '';
+                
+                // Extract property type from name (T for translation, R for rotation, S for scale)
+                let property = 'unknown';
+                if (name === 'T' || name.includes('Translation')) {
+                    property = 'translation';
+                } else if (name === 'R' || name.includes('Rotation')) {
+                    property = 'rotation';
+                } else if (name === 'S' || name.includes('Scale')) {
+                    property = 'scale';
+                }
+                
                 this.objects.animCurveNodes[id] = { 
                     id, 
                     name,
                     type: 'AnimationCurveNode',
-                    property: this.ExtractProperty(name)
+                    property: property
                 };
             }
             return startIndex + 1;
@@ -161,7 +220,7 @@ class FbxToVrmaConverter {
                     type: 'AnimationCurve',
                     times: [],
                     values: [],
-                    axis: this.ExtractAxis(name)
+                    axis: null // Will be determined from AnimationCurveNode connection
                 };
                 
                 // Parse the curve data
@@ -200,18 +259,19 @@ class FbxToVrmaConverter {
         return startIndex + 1;
     }
 
-
     ParseConnectionsSection(lines, startIndex) {
         const line = lines[startIndex];
         const trimmedLine = line.trim();
         
         if (trimmedLine.startsWith('C:') || trimmedLine.startsWith(';C:')) {
-            const match = trimmedLine.match(/C:\s*"([^"]+)",\s*(\d+),\s*(\d+)/);
+            // Updated regex to capture optional 4th parameter
+            const match = trimmedLine.match(/C:\s*"([^"]+)",\s*(\d+),\s*(\d+)(?:,\s*"([^"]+)")?/);
             if (match) {
                 this.connections.push({
                     type: match[1],
                     sourceId: match[2],
-                    targetId: match[3]
+                    targetId: match[3],
+                    property: match[4] || null
                 });
             }
         }
@@ -298,7 +358,7 @@ class FbxToVrmaConverter {
         
         // For each model, find its animation data
         for (const [modelId, model] of Object.entries(this.objects.models)) {
-            const vrmBoneName = boneMapping[model.name];
+            const vrmBoneName = this.GetVrmBoneName(model.name);
             if (!vrmBoneName) continue;
             
             // Find AnimationCurveNodes connected to this model
@@ -307,6 +367,18 @@ class FbxToVrmaConverter {
             for (const conn of modelConnections) {
                 const curveNode = this.objects.animCurveNodes[conn.sourceId];
                 if (!curveNode) continue;
+                
+                // Use the connection property to determine type if available
+                let property = curveNode.property;
+                if (conn.property) {
+                    if (conn.property.includes('Translation')) {
+                        property = 'translation';
+                    } else if (conn.property.includes('Rotation')) {
+                        property = 'rotation';
+                    } else if (conn.property.includes('Scale')) {
+                        property = 'scale';
+                    }
+                }
                 
                 // Find AnimationCurves connected to this AnimationCurveNode
                 const curveNodeConnections = connectionMap.byTarget[conn.sourceId] || [];
@@ -318,15 +390,30 @@ class FbxToVrmaConverter {
                     };
                 }
                 
+                // Collect all curves connected to this node
+                const curves = [];
                 for (const curveConn of curveNodeConnections) {
                     const curve = this.objects.animCurves[curveConn.sourceId];
-                    if (!curve || !curve.axis) continue;
-                    
-                    if (curveNode.property === 'rotation') {
-                        animationData[vrmBoneName].rotation[curve.axis] = curve;
-                    } else if (curveNode.property === 'translation') {
-                        animationData[vrmBoneName].translation[curve.axis] = curve;
+                    if (curve && curve.values.length > 0) {
+                        curves.push(curve);
                     }
+                }
+                
+                // Assign curves to axes based on connection order (X, Y, Z)
+                if (curves.length >= 3) {
+                    if (property === 'rotation') {
+                        animationData[vrmBoneName].rotation.x = curves[0];
+                        animationData[vrmBoneName].rotation.y = curves[1];
+                        animationData[vrmBoneName].rotation.z = curves[2];
+                        console.log(`Assigned rotation curves to ${vrmBoneName} (${model.name})`);
+                    } else if (property === 'translation') {
+                        animationData[vrmBoneName].translation.x = curves[0];
+                        animationData[vrmBoneName].translation.y = curves[1];
+                        animationData[vrmBoneName].translation.z = curves[2];
+                        console.log(`Assigned translation curves to ${vrmBoneName} (${model.name})`);
+                    }
+                } else if (curves.length > 0) {
+                    console.log(`Warning: ${vrmBoneName} (${model.name}) has ${curves.length} curves for ${property}, expected 3`);
                 }
             }
         }
