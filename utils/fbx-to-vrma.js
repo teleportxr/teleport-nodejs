@@ -437,6 +437,9 @@ class FbxToVrmaConverter {
             return;
         }
         
+        // Store animation data for node creation
+        this.animationData = {};
+        
         // Create glTF 2.0 compliant structure
         const vrmaData = {
             asset: {
@@ -651,6 +654,12 @@ class FbxToVrmaConverter {
             }
         }
 
+        // Create VRM skeleton nodes
+        const skeletonData = this.CreateVrmSkeletonNodes();
+        vrmaData.nodes = skeletonData.nodes;
+        vrmaData.scenes[0].nodes = skeletonData.rootNodes;
+        vrmaData.animations[0].channels = skeletonData.animationChannels;
+
         // Combine all buffer data
         const combinedBuffer = Buffer.concat(bufferData);
         
@@ -672,27 +681,128 @@ class FbxToVrmaConverter {
         const outputDir = path.dirname(outputPath);
         const baseName = path.basename(outputPath, '.vrma');
         
-        // Write JSON
-        fs.writeFileSync(outputPath, vrmaJson);
+        // Create text subfolder
+        const textDir = path.join(outputDir, 'text');
+        if (!fs.existsSync(textDir)) {
+            fs.mkdirSync(textDir, { recursive: true });
+        }
         
-        // Write binary buffer
+        // Write JSON file to text folder
+        const jsonPath = path.join(textDir, `${baseName}.vrma`);
+        fs.writeFileSync(jsonPath, vrmaJson);
+        
+        // Write binary buffer to text folder
         if (combinedBuffer.length > 0) {
-            const binPath = path.join(outputDir, `${baseName}.bin`);
+            const binPath = path.join(textDir, `${baseName}.bin`);
             fs.writeFileSync(binPath, combinedBuffer);
         }
 
-        // Create GLB file
-        this.CreateGlbFile(vrmaData, combinedBuffer, outputDir, baseName);
+        // Create GLB file with .vrma extension in original folder
+        this.CreateGlbFile(vrmaData, combinedBuffer, outputPath);
 
-        console.log(`\nVRMA file written to: ${outputPath}`);
+        console.log(`\nConversion completed:`);
+        console.log(`Text files written to: ${textDir}/`);
+        console.log(`- JSON: ${baseName}.vrma`);
         if (combinedBuffer.length > 0) {
-            console.log(`Binary buffer written to: ${baseName}.bin`);
+            console.log(`- Binary: ${baseName}.bin`);
         }
-        console.log(`GLB file written to: ${baseName}.glb`);
+        console.log(`GLB file written to: ${outputPath}`);
         console.log(`Animated bones: ${Object.keys(vrmaData.extensions.VRMC_vrm_animation.humanoid.humanBones).length}`);
     }
 
-    CreateGlbFile(gltfData, binaryBuffer, outputDir, baseName) {
+    CreateVrmSkeletonNodes() {
+        const nodes = [];
+        const nodeIndices = {};
+        
+        // Define VRM skeleton hierarchy with standard T-pose transforms
+        const vrmSkeleton = [
+            { name: "hips", parent: null, translation: [0, 1.0, 0] },
+            { name: "spine", parent: "hips", translation: [0, 0.1, 0] },
+            { name: "chest", parent: "spine", translation: [0, 0.1, 0] },
+            { name: "upperChest", parent: "chest", translation: [0, 0.1, 0] },
+            { name: "neck", parent: "upperChest", translation: [0, 0.1, 0] },
+            { name: "head", parent: "neck", translation: [0, 0.1, 0] },
+            
+            // Left arm
+            { name: "leftShoulder", parent: "upperChest", translation: [0.05, 0.08, 0] },
+            { name: "leftUpperArm", parent: "leftShoulder", translation: [0.12, 0, 0] },
+            { name: "leftLowerArm", parent: "leftUpperArm", translation: [0.27, 0, 0] },
+            { name: "leftHand", parent: "leftLowerArm", translation: [0.27, 0, 0] },
+            
+            // Right arm
+            { name: "rightShoulder", parent: "upperChest", translation: [-0.05, 0.08, 0] },
+            { name: "rightUpperArm", parent: "rightShoulder", translation: [-0.12, 0, 0] },
+            { name: "rightLowerArm", parent: "rightUpperArm", translation: [-0.27, 0, 0] },
+            { name: "rightHand", parent: "rightLowerArm", translation: [-0.27, 0, 0] },
+            
+            // Left leg
+            { name: "leftUpperLeg", parent: "hips", translation: [0.09, -0.05, 0] },
+            { name: "leftLowerLeg", parent: "leftUpperLeg", translation: [0, -0.42, 0] },
+            { name: "leftFoot", parent: "leftLowerLeg", translation: [0, -0.42, 0] },
+            { name: "leftToes", parent: "leftFoot", translation: [0, -0.05, 0.12] },
+            
+            // Right leg
+            { name: "rightUpperLeg", parent: "hips", translation: [-0.09, -0.05, 0] },
+            { name: "rightLowerLeg", parent: "rightUpperLeg", translation: [0, -0.42, 0] },
+            { name: "rightFoot", parent: "rightLowerLeg", translation: [0, -0.42, 0] },
+            { name: "rightToes", parent: "rightFoot", translation: [0, -0.05, 0.12] }
+        ];
+        
+        // Create nodes and build index map
+        for (let i = 0; i < vrmSkeleton.length; i++) {
+            const bone = vrmSkeleton[i];
+            const node = {
+                name: bone.name,
+                translation: bone.translation
+            };
+            
+            nodes.push(node);
+            nodeIndices[bone.name] = i;
+        }
+        
+        // Set up parent-child relationships
+        for (let i = 0; i < vrmSkeleton.length; i++) {
+            const bone = vrmSkeleton[i];
+            if (bone.parent && nodeIndices[bone.parent] !== undefined) {
+                const parentIndex = nodeIndices[bone.parent];
+                if (!nodes[parentIndex].children) {
+                    nodes[parentIndex].children = [];
+                }
+                nodes[parentIndex].children.push(i);
+            }
+        }
+        
+        // Update animations to reference node indices
+        const animationChannels = [];
+        for (const [boneName, boneData] of Object.entries(this.animationData)) {
+            const nodeIndex = nodeIndices[boneName];
+            if (nodeIndex === undefined) continue;
+            
+            if (boneData.rotation && boneData.rotation.samplerIndex !== undefined) {
+                animationChannels.push({
+                    sampler: boneData.rotation.samplerIndex,
+                    target: {
+                        node: nodeIndex,
+                        path: "rotation"
+                    }
+                });
+            }
+            
+            if (boneData.translation && boneData.translation.samplerIndex !== undefined) {
+                animationChannels.push({
+                    sampler: boneData.translation.samplerIndex,
+                    target: {
+                        node: nodeIndex,
+                        path: "translation"
+                    }
+                });
+            }
+        }
+        
+        return { nodes, animationChannels, rootNodes: [nodeIndices["hips"]] };
+    }
+
+    CreateGlbFile(gltfData, binaryBuffer, outputPath) {
         // Remove the uri from buffer definition for GLB
         const glbData = JSON.parse(JSON.stringify(gltfData)); // Deep clone
         if (glbData.buffers && glbData.buffers.length > 0) {
@@ -742,9 +852,8 @@ class FbxToVrmaConverter {
             binChunk
         ]);
 
-        // Write GLB file
-        const glbPath = path.join(outputDir, `${baseName}.glb`);
-        fs.writeFileSync(glbPath, glb);
+        // Write GLB file with .vrma extension
+        fs.writeFileSync(outputPath, glb);
     }
 
     EulerToQuaternion(x, y, z) {
