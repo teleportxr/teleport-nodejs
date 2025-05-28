@@ -483,6 +483,9 @@ class FbxToVrmaConverter {
         for (const [vrmBoneName, boneData] of Object.entries(animationData)) {
             const humanBone = {};
             
+            // Initialize animation data for this bone
+            this.animationData[vrmBoneName] = {};
+            
             // Process rotation
             if (boneData.rotation.x || boneData.rotation.y || boneData.rotation.z) {
                 // Get the time array from any available curve
@@ -518,9 +521,16 @@ class FbxToVrmaConverter {
                 // Create rotation values (convert Euler to quaternion)
                 const quaternions = [];
                 for (let i = 0; i < times.length; i++) {
-                    const x = (boneData.rotation.x?.values[i] || 0) * Math.PI / 180;
-                    const y = (boneData.rotation.y?.values[i] || 0) * Math.PI / 180;
-                    const z = (boneData.rotation.z?.values[i] || 0) * Math.PI / 180;
+                    // FBX uses degrees, convert to radians
+                    // Also handle coordinate system differences
+                    let x = (boneData.rotation.x?.values[i] || 0) * Math.PI / 180;
+                    let y = (boneData.rotation.y?.values[i] || 0) * Math.PI / 180;
+                    let z = (boneData.rotation.z?.values[i] || 0) * Math.PI / 180;
+                    
+                    // FBX to glTF/VRM coordinate system conversion
+                    // This may need adjustment based on your specific FBX export settings
+                    // Common conversion: negate rotation around X axis
+                    //x = -x;
                     
                     // Convert Euler to quaternion
                     const quat = this.EulerToQuaternion(x, y, z);
@@ -558,6 +568,14 @@ class FbxToVrmaConverter {
                 });
                 
                 const rotationSamplerIndex = samplerIndex++;
+                
+                // Store sampler index for later use
+                this.animationData[vrmBoneName].rotation = {
+                    input: timeAccessorIndex,
+                    output: rotationAccessorIndex,
+                    interpolation: "LINEAR",
+                    samplerIndex: rotationSamplerIndex
+                };
                 
                 // Store for VRM extension
                 humanBone.rotation = {
@@ -601,11 +619,16 @@ class FbxToVrmaConverter {
                 // Create translation values
                 const translations = [];
                 for (let i = 0; i < times.length; i++) {
-                    translations.push(
-                        (boneData.translation.x?.values[i] || 0) / 100, // Convert cm to m
-                        (boneData.translation.y?.values[i] || 0) / 100,
-                        (boneData.translation.z?.values[i] || 0) / 100
-                    );
+                    // FBX uses centimeters, convert to meters
+                    let x = (boneData.translation.x?.values[i] || 0) / 100;
+                    let y = (boneData.translation.y?.values[i] || 0) / 100;
+                    let z = (boneData.translation.z?.values[i] || 0) / 100;
+                    
+                    // FBX to glTF/VRM coordinate system conversion
+                    // Mixamo/FBX often has Z forward, -Y up
+                    // glTF/VRM has -Z forward, Y up
+                    // This may need adjustment based on your specific FBX export settings
+                    translations.push(-x, y, -z);
                 }
                 
                 const translationBuffer = Buffer.from(new Float32Array(translations).buffer);
@@ -640,6 +663,14 @@ class FbxToVrmaConverter {
                 
                 const translationSamplerIndex = samplerIndex++;
                 
+                // Store sampler index for later use
+                this.animationData[vrmBoneName].translation = {
+                    input: timeAccessorIndex,
+                    output: translationAccessorIndex,
+                    interpolation: "LINEAR",
+                    samplerIndex: translationSamplerIndex
+                };
+                
                 // Store for VRM extension
                 humanBone.translation = {
                     input: timeAccessorIndex,
@@ -671,13 +702,14 @@ class FbxToVrmaConverter {
             });
         }
 
-        // Clean up empty arrays if no animation data
-        if (vrmaData.animations[0].channels.length === 0 && vrmaData.animations[0].samplers.length === 0) {
+        // Clean up empty animations only if truly empty
+        if (!vrmaData.animations || 
+            (vrmaData.animations[0].channels.length === 0 && 
+             vrmaData.animations[0].samplers.length === 0)) {
             delete vrmaData.animations;
         }
 
-        // Write VRMA file
-        const vrmaJson = JSON.stringify(vrmaData, null, 2);
+        // Write files
         const outputDir = path.dirname(outputPath);
         const baseName = path.basename(outputPath, '.vrma');
         
@@ -686,6 +718,9 @@ class FbxToVrmaConverter {
         if (!fs.existsSync(textDir)) {
             fs.mkdirSync(textDir, { recursive: true });
         }
+        
+        // Convert to JSON string
+        const vrmaJson = JSON.stringify(vrmaData, null, 2);
         
         // Write JSON file to text folder
         const jsonPath = path.join(textDir, `${baseName}.vrma`);
@@ -858,7 +893,9 @@ class FbxToVrmaConverter {
 
     EulerToQuaternion(x, y, z) {
         // Convert Euler angles (in radians) to quaternion
-        // Using XYZ order (adjust as needed for Mixamo)
+        // FBX typically uses XYZ rotation order
+        // glTF expects quaternions in XYZW order
+        
         const c1 = Math.cos(x / 2);
         const c2 = Math.cos(y / 2);
         const c3 = Math.cos(z / 2);
@@ -866,12 +903,14 @@ class FbxToVrmaConverter {
         const s2 = Math.sin(y / 2);
         const s3 = Math.sin(z / 2);
         
-        return [
-            s1 * c2 * c3 + c1 * s2 * s3, // x
-            c1 * s2 * c3 - s1 * c2 * s3, // y
-            c1 * c2 * s3 + s1 * s2 * c3, // z
-            c1 * c2 * c3 - s1 * s2 * s3  // w
-        ];
+        // XYZ rotation order (most common for FBX)
+        const qx = s1 * c2 * c3 + c1 * s2 * s3;
+        const qy = c1 * s2 * c3 - s1 * c2 * s3;
+        const qz = c1 * c2 * s3 + s1 * s2 * c3;
+        const qw = c1 * c2 * c3 - s1 * s2 * s3;
+        
+        // Return in XYZW order as expected by glTF
+        return [qx, qy, qz, qw];
     }
 
     Convert(inputPath, outputPath) {
