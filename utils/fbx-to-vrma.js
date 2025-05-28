@@ -175,7 +175,88 @@ class FbxToVrmaConverter {
                 const id = match[1];
                 const name = match[2];
                 
-                this.objects.models[id] = { id, name, type: 'Model' };
+                this.objects.models[id] = { 
+                    id, 
+                    name, 
+                    type: 'Model',
+                    rotationOrder: 0, // Default
+                    preRotation: [0, 0, 0],
+                    postRotation: [0, 0, 0],
+                    rotationPivot: [0, 0, 0],
+                    rotationOffset: [0, 0, 0],
+                    scalingPivot: [0, 0, 0],
+                    scalingOffset: [0, 0, 0],
+                    lclTranslation: [0, 0, 0],
+                    lclRotation: [0, 0, 0],
+                    lclScaling: [1, 1, 1]
+                };
+                
+                // Look for Properties70 section
+                let i = startIndex + 1;
+                let inProperties = false;
+                
+                while (i < lines.length) {
+                    const propLine = lines[i].trim();
+                    
+                    if (propLine.includes('Properties70:')) {
+                        inProperties = true;
+                    } else if (inProperties && propLine.startsWith('P:')) {
+                        // Parse property
+                        const propMatch = propLine.match(/P:\s*"([^"]+)"[^,]*,[^,]*,[^,]*,[^,]*,(.+)/);
+                        if (propMatch) {
+                            const propName = propMatch[1];
+                            const propValue = propMatch[2];
+                            
+                            switch (propName) {
+                                case 'RotationOrder':
+                                    this.objects.models[id].rotationOrder = parseInt(propValue) || 0;
+                                    break;
+                                case 'PreRotation':
+                                case 'PostRotation':
+                                case 'RotationPivot':
+                                case 'RotationOffset':
+                                case 'ScalingPivot':
+                                case 'ScalingOffset':
+                                case 'Lcl Translation':
+                                case 'Lcl Rotation':
+                                case 'Lcl Scaling': {
+                                    const values = propValue.split(',').map(v => parseFloat(v.trim()) || 0);
+                                    if (values.length >= 3) {
+                                        const key = propName.replace(/\s+/g, '');
+                                        if (key === 'LclTranslation') {
+                                            this.objects.models[id].lclTranslation = values.slice(0, 3);
+                                        } else if (key === 'LclRotation') {
+                                            this.objects.models[id].lclRotation = values.slice(0, 3);
+                                        } else if (key === 'LclScaling') {
+                                            this.objects.models[id].lclScaling = values.slice(0, 3);
+                                        } else if (key === 'PreRotation') {
+                                            this.objects.models[id].preRotation = values.slice(0, 3);
+                                        } else if (key === 'PostRotation') {
+                                            this.objects.models[id].postRotation = values.slice(0, 3);
+                                        } else if (key === 'RotationPivot') {
+                                            this.objects.models[id].rotationPivot = values.slice(0, 3);
+                                        } else if (key === 'RotationOffset') {
+                                            this.objects.models[id].rotationOffset = values.slice(0, 3);
+                                        } else if (key === 'ScalingPivot') {
+                                            this.objects.models[id].scalingPivot = values.slice(0, 3);
+                                        } else if (key === 'ScalingOffset') {
+                                            this.objects.models[id].scalingOffset = values.slice(0, 3);
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    } else if (propLine === '}' && inProperties) {
+                        inProperties = false;
+                    } else if (propLine === '}' && !inProperties) {
+                        break; // End of Model
+                    }
+                    
+                    i++;
+                }
+                
+                return i;
             }
             return startIndex + 1;
         }
@@ -386,7 +467,12 @@ class FbxToVrmaConverter {
                 if (!animationData[vrmBoneName]) {
                     animationData[vrmBoneName] = {
                         rotation: { x: null, y: null, z: null },
-                        translation: { x: null, y: null, z: null }
+                        translation: { x: null, y: null, z: null },
+                        rotationOrder: this.GetRotationOrder(model.rotationOrder || 0),
+                        preRotation: model.preRotation || [0, 0, 0],
+                        postRotation: model.postRotation || [0, 0, 0],
+                        lclRotation: model.lclRotation || [0, 0, 0],
+                        lclTranslation: model.lclTranslation || [0, 0, 0]
                     };
                 }
                 
@@ -405,7 +491,7 @@ class FbxToVrmaConverter {
                         animationData[vrmBoneName].rotation.x = curves[0];
                         animationData[vrmBoneName].rotation.y = curves[1];
                         animationData[vrmBoneName].rotation.z = curves[2];
-                        console.log(`Assigned rotation curves to ${vrmBoneName} (${model.name})`);
+                        console.log(`Assigned rotation curves to ${vrmBoneName} (${model.name}) with order ${animationData[vrmBoneName].rotationOrder}`);
                     } else if (property === 'translation') {
                         animationData[vrmBoneName].translation.x = curves[0];
                         animationData[vrmBoneName].translation.y = curves[1];
@@ -483,6 +569,9 @@ class FbxToVrmaConverter {
         for (const [vrmBoneName, boneData] of Object.entries(animationData)) {
             const humanBone = {};
             
+            // Initialize animation data for this bone
+            this.animationData[vrmBoneName] = {};
+            
             // Process rotation
             if (boneData.rotation.x || boneData.rotation.y || boneData.rotation.z) {
                 // Get the time array from any available curve
@@ -518,15 +607,58 @@ class FbxToVrmaConverter {
                 // Create rotation values (convert Euler to quaternion)
                 const quaternions = [];
                 for (let i = 0; i < times.length; i++) {
-                    const x = (boneData.rotation.x?.values[i] || 0) * Math.PI / 180;
-                    const y = (boneData.rotation.y?.values[i] || 0) * Math.PI / 180;
-                    const z = (boneData.rotation.z?.values[i] || 0) * Math.PI / 180;
+                    // FBX uses degrees, convert to radians
+                    const fbxX = (boneData.rotation.x?.values[i] || 0) * Math.PI / 180;
+                    const fbxY = (boneData.rotation.y?.values[i] || 0) * Math.PI / 180;
+                    const fbxZ = (boneData.rotation.z?.values[i] || 0) * Math.PI / 180;
                     
-                    // Convert Euler to quaternion
-                    const quat = this.EulerToQuaternion(x, y, z);
-                    quaternions.push(...quat);
-                }
-                
+                    // FBX to glTF/VRM coordinate system conversion
+                    // FBX: Y-up, Z-forward (right-handed)
+                    // glTF/VRM: Y-up, -Z-forward (right-handed)
+                    // 
+                    // Common conversions to try:
+                    // Option 1: Just negate Z rotation
+                    // let x = fbxX;
+                    // let y = fbxY;
+                    // let z = -fbxZ;
+                    
+                    // Option 2: Swap and negate (common for Mixamo)
+                    // let x = -fbxX;
+                    // let y = -fbxZ;
+                    // let z = fbxY;
+                    
+                    // Option 3: Keep as is (some FBX files already match glTF)
+                    let x = fbxX;
+                    let y = fbxY;
+                    let z = fbxZ;
+                    
+                    // TODO: You may need to experiment with these transformations:
+                    // - Swap axes: e.g., (x,y,z) -> (x,z,-y) or (-x,y,-z)
+                    // - Negate specific axes based on your source
+                    // - Apply different transforms for different bones
+                    
+                    // Convert Euler to quaternion using the bone's rotation order
+                    const rotationOrder = boneData.rotationOrder || 'XYZ';
+                    const quat = this.EulerToQuaternion(x, y, z, rotationOrder);
+					if(!this.IsValidQuaternion(quat))
+					{
+						console.error("Invalid quaternion on ",vrmBoneName);
+					}
+					{
+						const [x, y, z, w] = quat;
+						console.log(`\n${vrmBoneName} frame ${i}, ${x}, ${y}, ${z}, ${w}`);
+						
+						quaternions.push(x, y, z, w);
+					}
+					 // Debug: Log first frame of each bone
+                    if (i === 0 && vrmBoneName === 'hips') {
+                        console.log(`\nDebug - ${vrmBoneName} first frame:`);
+                        console.log(`  FBX Rotation: X=${(fbxX * 180/Math.PI).toFixed(1)}° Y=${(fbxY * 180/Math.PI).toFixed(1)}° Z=${(fbxZ * 180/Math.PI).toFixed(1)}°`);
+                        console.log(`  Converted: X=${(x * 180/Math.PI).toFixed(1)}° Y=${(y * 180/Math.PI).toFixed(1)}° Z=${(z * 180/Math.PI).toFixed(1)}°`);
+                        console.log(`  Quaternion: [${quat.map(v => v.toFixed(3)).join(', ')}]`);
+                    }
+				}
+
                 const rotationBuffer = Buffer.from(new Float32Array(quaternions).buffer);
                 bufferData.push(rotationBuffer);
                 
@@ -558,6 +690,14 @@ class FbxToVrmaConverter {
                 });
                 
                 const rotationSamplerIndex = samplerIndex++;
+                
+                // Store sampler index for later use
+                this.animationData[vrmBoneName].rotation = {
+                    input: timeAccessorIndex,
+                    output: rotationAccessorIndex,
+                    interpolation: "LINEAR",
+                    samplerIndex: rotationSamplerIndex
+                };
                 
                 // Store for VRM extension
                 humanBone.rotation = {
@@ -601,11 +741,28 @@ class FbxToVrmaConverter {
                 // Create translation values
                 const translations = [];
                 for (let i = 0; i < times.length; i++) {
-                    translations.push(
-                        (boneData.translation.x?.values[i] || 0) / 100, // Convert cm to m
-                        (boneData.translation.y?.values[i] || 0) / 100,
-                        (boneData.translation.z?.values[i] || 0) / 100
-                    );
+                    // FBX uses centimeters, convert to meters
+                    const fbxX = (boneData.translation.x?.values[i] || 0) / 100;
+                    const fbxY = (boneData.translation.y?.values[i] || 0) / 100;
+                    const fbxZ = (boneData.translation.z?.values[i] || 0) / 100;
+                    
+                    // FBX to glTF/VRM coordinate system conversion
+                    // Option 1: Just negate Z (most common)
+                    let x = fbxX;
+                    let y = fbxY;
+                    let z = -fbxZ;
+                    
+                    // Option 2: No conversion needed
+                    // let x = fbxX;
+                    // let y = fbxY;
+                    // let z = fbxZ;
+                    
+                    // Option 3: Swap axes (less common)
+                    // let x = fbxX;
+                    // let y = fbxZ;
+                    // let z = fbxY;
+                    
+                    translations.push(x, y, z);
                 }
                 
                 const translationBuffer = Buffer.from(new Float32Array(translations).buffer);
@@ -640,6 +797,14 @@ class FbxToVrmaConverter {
                 
                 const translationSamplerIndex = samplerIndex++;
                 
+                // Store sampler index for later use
+                this.animationData[vrmBoneName].translation = {
+                    input: timeAccessorIndex,
+                    output: translationAccessorIndex,
+                    interpolation: "LINEAR",
+                    samplerIndex: translationSamplerIndex
+                };
+                
                 // Store for VRM extension
                 humanBone.translation = {
                     input: timeAccessorIndex,
@@ -671,13 +836,14 @@ class FbxToVrmaConverter {
             });
         }
 
-        // Clean up empty arrays if no animation data
-        if (vrmaData.animations[0].channels.length === 0 && vrmaData.animations[0].samplers.length === 0) {
+        // Clean up empty animations only if truly empty
+        if (!vrmaData.animations || 
+            (vrmaData.animations[0].channels.length === 0 && 
+             vrmaData.animations[0].samplers.length === 0)) {
             delete vrmaData.animations;
         }
 
-        // Write VRMA file
-        const vrmaJson = JSON.stringify(vrmaData, null, 2);
+        // Write files
         const outputDir = path.dirname(outputPath);
         const baseName = path.basename(outputPath, '.vrma');
         
@@ -686,6 +852,9 @@ class FbxToVrmaConverter {
         if (!fs.existsSync(textDir)) {
             fs.mkdirSync(textDir, { recursive: true });
         }
+        
+        // Convert to JSON string
+        const vrmaJson = JSON.stringify(vrmaData, null, 2);
         
         // Write JSON file to text folder
         const jsonPath = path.join(textDir, `${baseName}.vrma`);
@@ -856,21 +1025,114 @@ class FbxToVrmaConverter {
         fs.writeFileSync(outputPath, glb);
     }
 
-    EulerToQuaternion(x, y, z) {
+    GetRotationOrder(orderValue) {
+        // FBX rotation order enum values
+        const rotationOrders = {
+            0: 'XYZ',
+            1: 'XZY',
+            2: 'YZX',
+            3: 'YXZ',
+            4: 'ZXY',
+            5: 'ZYX',
+            6: 'SphericXYZ' // Rarely used
+        };
+        return rotationOrders[orderValue] || 'XYZ';
+    }
+
+    EulerToQuaternion(x, y, z, order = 'XYZ') {
         // Convert Euler angles (in radians) to quaternion
-        // Using XYZ order (adjust as needed for Mixamo)
-        const c1 = Math.cos(x / 2);
-        const c2 = Math.cos(y / 2);
-        const c3 = Math.cos(z / 2);
-        const s1 = Math.sin(x / 2);
-        const s2 = Math.sin(y / 2);
-        const s3 = Math.sin(z / 2);
+        const cx = Math.cos(x / 2);
+        const cy = Math.cos(y / 2);
+        const cz = Math.cos(z / 2);
+        const sx = Math.sin(x / 2);
+        const sy = Math.sin(y / 2);
+        const sz = Math.sin(z / 2);
+        
+        let qw, qx, qy, qz;
+        
+        // Apply rotation order
+        switch (order) {
+            case 'XYZ':
+                qw = cx * cy * cz - sx * sy * sz;
+                qx = sx * cy * cz + cx * sy * sz;
+                qy = cx * sy * cz - sx * cy * sz;
+                qz = cx * cy * sz + sx * sy * cz;
+                break;
+            case 'XZY':
+                qw = cx * cy * cz + sx * sy * sz;
+                qx = sx * cy * cz - cx * sy * sz;
+                qy = cx * sy * cz - sx * cy * sz;
+                qz = cx * cy * sz + sx * sy * cz;
+                break;
+            case 'YXZ':
+                qw = cx * cy * cz + sx * sy * sz;
+                qx = sx * cy * cz + cx * sy * sz;
+                qy = cx * sy * cz - sx * cy * sz;
+                qz = cx * cy * sz - sx * sy * cz;
+                break;
+            case 'YZX':
+                qw = cx * cy * cz - sx * sy * sz;
+                qx = sx * cy * cz + cx * sy * sz;
+                qy = cx * sy * cz + sx * cy * sz;
+                qz = cx * cy * sz - sx * sy * cz;
+                break;
+            case 'ZXY':
+                qw = cx * cy * cz + sx * sy * sz;
+                qx = sx * cy * cz + cx * sy * sz;
+                qy = cx * sy * cz - sx * cy * sz;
+                qz = cx * cy * sz - sx * sy * cz;
+                break;
+            case 'ZYX':
+                qw = cx * cy * cz - sx * sy * sz;
+                qx = sx * cy * cz - cx * sy * sz;
+                qy = cx * sy * cz + sx * cy * sz;
+                qz = cx * cy * sz + sx * sy * cz;
+                break;
+            default:
+                // Default to XYZ
+                qw = cx * cy * cz - sx * sy * sz;
+                qx = sx * cy * cz + cx * sy * sz;
+                qy = cx * sy * cz - sx * cy * sz;
+                qz = cx * cy * sz + sx * sy * cz;
+        }
+        
+        // Normalize the quaternion
+        const norm = Math.sqrt(qx * qx + qy * qy + qz * qz + qw * qw);
+        
+        // Return normalized quaternion in XYZW order as expected by glTF
+        return [qx / norm, qy / norm, qz / norm, qw / norm];
+    }
+
+    IsValidQuaternion(quat) {
+        if (!quat || quat.length !== 4) return false;
+        
+        const [x, y, z, w] = quat;
+        
+        // Check for NaN or Infinity
+        if (!isFinite(x) || !isFinite(y) || !isFinite(z) || !isFinite(w)) {
+            return false;
+        }
+        
+        // Check if normalized (magnitude should be close to 1)
+        const magnitude = Math.sqrt(x * x + y * y + z * z + w * w);
+        if (Math.abs(magnitude - 1.0) > 0.001) {
+            console.warn(`Quaternion not normalized: magnitude = ${magnitude}`);
+            return false;
+        }
+        
+        return true;
+    }
+
+    MultiplyQuaternions(q1, q2) {
+        // Multiply two quaternions (q1 * q2)
+        const [x1, y1, z1, w1] = q1;
+        const [x2, y2, z2, w2] = q2;
         
         return [
-            s1 * c2 * c3 + c1 * s2 * s3, // x
-            c1 * s2 * c3 - s1 * c2 * s3, // y
-            c1 * c2 * s3 + s1 * s2 * c3, // z
-            c1 * c2 * c3 - s1 * s2 * s3  // w
+            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+            w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+            w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
         ];
     }
 
