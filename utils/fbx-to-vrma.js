@@ -179,78 +179,47 @@ class FbxToVrmaConverter {
                     id, 
                     name, 
                     type: 'Model',
-                    rotationOrder: 0, // Default
-                    preRotation: [0, 0, 0],
-                    postRotation: [0, 0, 0],
-                    rotationPivot: [0, 0, 0],
-                    rotationOffset: [0, 0, 0],
-                    scalingPivot: [0, 0, 0],
-                    scalingOffset: [0, 0, 0],
-                    lclTranslation: [0, 0, 0],
-                    lclRotation: [0, 0, 0],
-                    lclScaling: [1, 1, 1]
+                    properties: {
+                        'Lcl Translation': [0, 0, 0],
+                        'Lcl Rotation': [0, 0, 0],
+                        'Lcl Scaling': [1, 1, 1],
+                        'PreRotation': [0, 0, 0],
+                        'PostRotation': [0, 0, 0],
+                        'RotationPivot': [0, 0, 0],
+                        'ScalingPivot': [0, 0, 0],
+                        'RotationOffset': [0, 0, 0],
+                        'ScalingOffset': [0, 0, 0],
+                        'RotationOrder': 0
+                    }
                 };
                 
-                // Look for Properties70 section
+                // Look for properties in the following lines
                 let i = startIndex + 1;
-                let inProperties = false;
+                let braceLevel = 1;
                 
-                while (i < lines.length) {
+                while (i < lines.length && braceLevel > 0) {
                     const propLine = lines[i].trim();
                     
-                    if (propLine.includes('Properties70:')) {
-                        inProperties = true;
-                    } else if (inProperties && propLine.startsWith('P:')) {
-                        // Parse property
-                        const propMatch = propLine.match(/P:\s*"([^"]+)"[^,]*,[^,]*,[^,]*,[^,]*,(.+)/);
+                    // Track braces
+                    if (propLine.includes('{')) braceLevel++;
+                    if (propLine.includes('}')) braceLevel--;
+                    
+                    // Parse property lines
+                    if (propLine.includes('P:')) {
+                        // FBX property format: P: "name", "type", "flags", "flags2", value1, value2, value3
+                        const propMatch = propLine.match(/P:\s*"([^"]+)"[^,]*,[^,]*,[^,]*,[^,]*,\s*([-\d.]+)(?:,\s*([-\d.]+))?(?:,\s*([-\d.]+))?/);
                         if (propMatch) {
                             const propName = propMatch[1];
-                            const propValue = propMatch[2];
+                            const val1 = parseFloat(propMatch[2]) || 0;
+                            const val2 = parseFloat(propMatch[3]) || 0;
+                            const val3 = parseFloat(propMatch[4]) || 0;
                             
-                            switch (propName) {
-                                case 'RotationOrder':
-                                    this.objects.models[id].rotationOrder = parseInt(propValue) || 0;
-                                    break;
-                                case 'PreRotation':
-                                case 'PostRotation':
-                                case 'RotationPivot':
-                                case 'RotationOffset':
-                                case 'ScalingPivot':
-                                case 'ScalingOffset':
-                                case 'Lcl Translation':
-                                case 'Lcl Rotation':
-                                case 'Lcl Scaling': {
-                                    const values = propValue.split(',').map(v => parseFloat(v.trim()) || 0);
-                                    if (values.length >= 3) {
-                                        const key = propName.replace(/\s+/g, '');
-                                        if (key === 'LclTranslation') {
-                                            this.objects.models[id].lclTranslation = values.slice(0, 3);
-                                        } else if (key === 'LclRotation') {
-                                            this.objects.models[id].lclRotation = values.slice(0, 3);
-                                        } else if (key === 'LclScaling') {
-                                            this.objects.models[id].lclScaling = values.slice(0, 3);
-                                        } else if (key === 'PreRotation') {
-                                            this.objects.models[id].preRotation = values.slice(0, 3);
-                                        } else if (key === 'PostRotation') {
-                                            this.objects.models[id].postRotation = values.slice(0, 3);
-                                        } else if (key === 'RotationPivot') {
-                                            this.objects.models[id].rotationPivot = values.slice(0, 3);
-                                        } else if (key === 'RotationOffset') {
-                                            this.objects.models[id].rotationOffset = values.slice(0, 3);
-                                        } else if (key === 'ScalingPivot') {
-                                            this.objects.models[id].scalingPivot = values.slice(0, 3);
-                                        } else if (key === 'ScalingOffset') {
-                                            this.objects.models[id].scalingOffset = values.slice(0, 3);
-                                        }
-                                    }
-                                    break;
-                                }
+                            if (propName === 'RotationOrder') {
+                                this.objects.models[id].properties[propName] = Math.round(val1);
+                            } else if (this.objects.models[id].properties.hasOwnProperty(propName)) {
+                                this.objects.models[id].properties[propName] = [val1, val2, val3];
                             }
                         }
-                    } else if (propLine === '}' && inProperties) {
-                        inProperties = false;
-                    } else if (propLine === '}' && !inProperties) {
-                        break; // End of Model
                     }
                     
                     i++;
@@ -468,11 +437,9 @@ class FbxToVrmaConverter {
                     animationData[vrmBoneName] = {
                         rotation: { x: null, y: null, z: null },
                         translation: { x: null, y: null, z: null },
-                        rotationOrder: this.GetRotationOrder(model.rotationOrder || 0),
-                        preRotation: model.preRotation || [0, 0, 0],
-                        postRotation: model.postRotation || [0, 0, 0],
-                        lclRotation: model.lclRotation || [0, 0, 0],
-                        lclTranslation: model.lclTranslation || [0, 0, 0]
+                        rotationOrder: this.GetRotationOrder(model.properties.RotationOrder || 0),
+                        preRotation: model.properties.PreRotation || [0, 0, 0],
+                        postRotation: model.properties.PostRotation || [0, 0, 0]
                     };
                 }
                 
@@ -639,18 +606,9 @@ class FbxToVrmaConverter {
                     
                     // Convert Euler to quaternion using the bone's rotation order
                     const rotationOrder = boneData.rotationOrder || 'XYZ';
-                    const quat = this.EulerToQuaternion(x, y, z, rotationOrder);
-					if(!this.IsValidQuaternion(quat))
-					{
-						console.error("Invalid quaternion on ",vrmBoneName);
-					}
-					{
-						const [x, y, z, w] = quat;
-						console.log(`\n${vrmBoneName} frame ${i}, ${x}, ${y}, ${z}, ${w}`);
-						
-						quaternions.push(x, y, z, w);
-					}
-					 // Debug: Log first frame of each bone
+					const quat = this.ApplyPreRotation(x, y, z, boneData.preRotation, rotationOrder);
+                    quaternions.push(quat[0],quat[1],quat[2],quat[3]);
+                    // Debug: Log first frame of each bone
                     if (i === 0 && vrmBoneName === 'hips') {
                         console.log(`\nDebug - ${vrmBoneName} first frame:`);
                         console.log(`  FBX Rotation: X=${(fbxX * 180/Math.PI).toFixed(1)}° Y=${(fbxY * 180/Math.PI).toFixed(1)}° Z=${(fbxZ * 180/Math.PI).toFixed(1)}°`);
@@ -658,7 +616,7 @@ class FbxToVrmaConverter {
                         console.log(`  Quaternion: [${quat.map(v => v.toFixed(3)).join(', ')}]`);
                     }
 				}
-
+				
                 const rotationBuffer = Buffer.from(new Float32Array(quaternions).buffer);
                 bufferData.push(rotationBuffer);
                 
@@ -1025,6 +983,71 @@ class FbxToVrmaConverter {
         fs.writeFileSync(outputPath, glb);
     }
 
+    ApplyPreRotation(x, y, z, preRotation, rotationOrder) {
+        // Apply pre-rotation to the animated rotation values
+        // Pre-rotation is applied before the animated rotation
+        
+        if (!preRotation || (preRotation[0] === 0 && preRotation[1] === 0 && preRotation[2] === 0)) {
+            return { x, y, z };
+        }
+        
+        // Convert pre-rotation to radians
+        const preX = preRotation[0] * Math.PI / 180;
+        const preY = preRotation[1] * Math.PI / 180;
+        const preZ = preRotation[2] * Math.PI / 180;
+        
+        // Convert both to quaternions and multiply
+        const animQuat = this.EulerToQuaternion(x, y, z, rotationOrder);
+        const preQuat = this.EulerToQuaternion(preX, preY, preZ, rotationOrder);
+       //preQuat[0]=-preQuat[0];
+       //preQuat[1]=-preQuat[1];
+       //preQuat[2]=-preQuat[2];
+        // Multiply quaternions: result = pre * anim
+        const result = this.MultiplyQuaternions(preQuat, animQuat);
+        
+        // Convert back to Euler (this is approximate)
+        return animQuat;
+    }
+    
+    MultiplyQuaternions(q1, q2) {
+        // q1 * q2
+        const [x1, y1, z1, w1] = q1;
+        const [x2, y2, z2, w2] = q2;
+        
+        return [
+            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+            w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+            w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
+        ];
+    }
+    
+    QuaternionToEuler(quat, order = 'XYZ') {
+        const [x, y, z, w] = quat;
+        
+        // This is a simplified conversion - full implementation would handle all orders
+        let ex, ey, ez;
+        
+        if (order === 'XYZ') {
+            const sinr_cosp = 2 * (w * x + y * z);
+            const cosr_cosp = 1 - 2 * (x * x + y * y);
+            ex = Math.atan2(sinr_cosp, cosr_cosp);
+            
+            const sinp = 2 * (w * y - z * x);
+            ey = Math.abs(sinp) >= 1 ? Math.sign(sinp) * Math.PI / 2 : Math.asin(sinp);
+            
+            const siny_cosp = 2 * (w * z + x * y);
+            const cosy_cosp = 1 - 2 * (y * y + z * z);
+            ez = Math.atan2(siny_cosp, cosy_cosp);
+        } else {
+            // For now, default to XYZ for other orders
+            // Full implementation would handle all 6 orders
+            return this.QuaternionToEuler(quat, 'XYZ');
+        }
+        
+        return { x: ex, y: ey, z: ez };
+    }
+    
     GetRotationOrder(orderValue) {
         // FBX rotation order enum values
         const rotationOrders = {
@@ -1040,100 +1063,66 @@ class FbxToVrmaConverter {
     }
 
     EulerToQuaternion(x, y, z, order = 'XYZ') {
-        // Convert Euler angles (in radians) to quaternion
-        const cx = Math.cos(x / 2);
-        const cy = Math.cos(y / 2);
-        const cz = Math.cos(z / 2);
-        const sx = Math.sin(x / 2);
-        const sy = Math.sin(y / 2);
-        const sz = Math.sin(z / 2);
-        
-        let qw, qx, qy, qz;
-        
-        // Apply rotation order
-        switch (order) {
-            case 'XYZ':
-                qw = cx * cy * cz - sx * sy * sz;
-                qx = sx * cy * cz + cx * sy * sz;
-                qy = cx * sy * cz - sx * cy * sz;
-                qz = cx * cy * sz + sx * sy * cz;
-                break;
-            case 'XZY':
-                qw = cx * cy * cz + sx * sy * sz;
-                qx = sx * cy * cz - cx * sy * sz;
-                qy = cx * sy * cz - sx * cy * sz;
-                qz = cx * cy * sz + sx * sy * cz;
-                break;
-            case 'YXZ':
-                qw = cx * cy * cz + sx * sy * sz;
-                qx = sx * cy * cz + cx * sy * sz;
-                qy = cx * sy * cz - sx * cy * sz;
-                qz = cx * cy * sz - sx * sy * cz;
-                break;
-            case 'YZX':
-                qw = cx * cy * cz - sx * sy * sz;
-                qx = sx * cy * cz + cx * sy * sz;
-                qy = cx * sy * cz + sx * cy * sz;
-                qz = cx * cy * sz - sx * sy * cz;
-                break;
-            case 'ZXY':
-                qw = cx * cy * cz + sx * sy * sz;
-                qx = sx * cy * cz + cx * sy * sz;
-                qy = cx * sy * cz - sx * cy * sz;
-                qz = cx * cy * sz - sx * sy * cz;
-                break;
-            case 'ZYX':
-                qw = cx * cy * cz - sx * sy * sz;
-                qx = sx * cy * cz - cx * sy * sz;
-                qy = cx * sy * cz + sx * cy * sz;
-                qz = cx * cy * sz + sx * sy * cz;
-                break;
-            default:
-                // Default to XYZ
-                qw = cx * cy * cz - sx * sy * sz;
-                qx = sx * cy * cz + cx * sy * sz;
-                qy = cx * sy * cz - sx * cy * sz;
-                qz = cx * cy * sz + sx * sy * cz;
-        }
-        
-        // Normalize the quaternion
-        const norm = Math.sqrt(qx * qx + qy * qy + qz * qz + qw * qw);
-        
-        // Return normalized quaternion in XYZW order as expected by glTF
-        return [qx / norm, qy / norm, qz / norm, qw / norm];
-    }
+		
+		const cos = Math.cos;
+		const sin = Math.sin;
 
-    IsValidQuaternion(quat) {
-        if (!quat || quat.length !== 4) return false;
-        
-        const [x, y, z, w] = quat;
-        
-        // Check for NaN or Infinity
-        if (!isFinite(x) || !isFinite(y) || !isFinite(z) || !isFinite(w)) {
-            return false;
-        }
-        
-        // Check if normalized (magnitude should be close to 1)
-        const magnitude = Math.sqrt(x * x + y * y + z * z + w * w);
-        if (Math.abs(magnitude - 1.0) > 0.001) {
-            console.warn(`Quaternion not normalized: magnitude = ${magnitude}`);
-            return false;
-        }
-        
-        return true;
-    }
+		const c1 = cos( x / 2 );
+		const c2 = cos( y / 2 );
+		const c3 = cos( z / 2 );
 
-    MultiplyQuaternions(q1, q2) {
-        // Multiply two quaternions (q1 * q2)
-        const [x1, y1, z1, w1] = q1;
-        const [x2, y2, z2, w2] = q2;
-        
-        return [
-            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
-            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
-            w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
-            w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
-        ];
+		const s1 = sin( x / 2 );
+		const s2 = sin( y / 2 );
+		const s3 = sin( z / 2 );
+		var q={x:0,y:0,z:0,w:0};
+		switch ( order ) {
+
+			case 'XYZ':
+				q.x = s1 * c2 * c3 + c1 * s2 * s3;
+				q.y = c1 * s2 * c3 - s1 * c2 * s3;
+				q.z = c1 * c2 * s3 + s1 * s2 * c3;
+				q.w = c1 * c2 * c3 - s1 * s2 * s3;
+				break;
+
+			case 'YXZ':
+				q.x = s1 * c2 * c3 + c1 * s2 * s3;
+				q.y = c1 * s2 * c3 - s1 * c2 * s3;
+				q.z = c1 * c2 * s3 - s1 * s2 * c3;
+				q.w = c1 * c2 * c3 + s1 * s2 * s3;
+				break;
+
+			case 'ZXY':
+				q.x = s1 * c2 * c3 - c1 * s2 * s3;
+				q.y = c1 * s2 * c3 + s1 * c2 * s3;
+				q.z = c1 * c2 * s3 + s1 * s2 * c3;
+				q.w = c1 * c2 * c3 - s1 * s2 * s3;
+				break;
+
+			case 'ZYX':
+				q.x = s1 * c2 * c3 - c1 * s2 * s3;
+				q.y = c1 * s2 * c3 + s1 * c2 * s3;
+				q.z = c1 * c2 * s3 - s1 * s2 * c3;
+				q.w = c1 * c2 * c3 + s1 * s2 * s3;
+				break;
+
+			case 'YZX':
+				q.x = s1 * c2 * c3 + c1 * s2 * s3;
+				q.y = c1 * s2 * c3 + s1 * c2 * s3;
+				q.z = c1 * c2 * s3 - s1 * s2 * c3;
+				q.w = c1 * c2 * c3 - s1 * s2 * s3;
+				break;
+
+			case 'XZY':
+				q.x = s1 * c2 * c3 - c1 * s2 * s3;
+				q.y = c1 * s2 * c3 - s1 * c2 * s3;
+				q.z = c1 * c2 * s3 + s1 * s2 * c3;
+				q.w = c1 * c2 * c3 + s1 * s2 * s3;
+				break;
+
+			default:
+				break;
+		}
+		return [q.x,q.y,q.z,q.w];
     }
 
     Convert(inputPath, outputPath) {
