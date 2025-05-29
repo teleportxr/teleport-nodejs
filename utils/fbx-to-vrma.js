@@ -574,47 +574,32 @@ class FbxToVrmaConverter {
                 // Create rotation values (convert Euler to quaternion)
                 const quaternions = [];
                 for (let i = 0; i < times.length; i++) {
-                    // FBX uses degrees, convert to radians
-                    const fbxX = (boneData.rotation.x?.values[i] || 0) * Math.PI / 180;
-                    const fbxY = (boneData.rotation.y?.values[i] || 0) * Math.PI / 180;
-                    const fbxZ = (boneData.rotation.z?.values[i] || 0) * Math.PI / 180;
-                    
-                    // FBX to glTF/VRM coordinate system conversion
-                    // FBX: Y-up, Z-forward (right-handed)
-                    // glTF/VRM: Y-up, -Z-forward (right-handed)
-                    // 
-                    // Common conversions to try:
-                    // Option 1: Just negate Z rotation
-                    // let x = fbxX;
-                    // let y = fbxY;
-                    // let z = -fbxZ;
-                    
-                    // Option 2: Swap and negate (common for Mixamo)
-                    // let x = -fbxX;
-                    // let y = -fbxZ;
-                    // let z = fbxY;
-                    
-                    // Option 3: Keep as is (some FBX files already match glTF)
-                    let x = fbxX;
-                    let y = fbxY;
-                    let z = fbxZ;
-                    
-                    // TODO: You may need to experiment with these transformations:
-                    // - Swap axes: e.g., (x,y,z) -> (x,z,-y) or (-x,y,-z)
-                    // - Negate specific axes based on your source
-                    // - Apply different transforms for different bones
-                    
-                    // Convert Euler to quaternion using the bone's rotation order
-                    const rotationOrder = boneData.rotationOrder || 'XYZ';
+					// FBX uses degrees, convert to radians
+					const fbxX = (boneData.rotation.x?.values[i] || 0) * Math.PI / 180;
+					const fbxY = (boneData.rotation.y?.values[i] || 0) * Math.PI / 180;
+					const fbxZ = (boneData.rotation.z?.values[i] || 0) * Math.PI / 180;
+					
+					// FBX to glTF/VRM coordinate system conversion
+					// FBX: Right-handed, Y-up, Z-forward
+					// glTF/VRM: Right-handed, Y-up, -Z-forward
+					// This requires negating rotations around X and Y axes
+					let x = fbxX;
+					let y = fbxY;
+					let z = fbxZ;
+					
+					// Apply pre-rotation with the converted values
+					const rotationOrder = boneData.rotationOrder || 'XYZ';
 					const quat = this.ApplyPreRotation(x, y, z, boneData.preRotation, rotationOrder);
-                    quaternions.push(quat[0],quat[1],quat[2],quat[3]);
-                    // Debug: Log first frame of each bone
-                    if (i === 0 && vrmBoneName === 'hips') {
-                        console.log(`\nDebug - ${vrmBoneName} first frame:`);
-                        console.log(`  FBX Rotation: X=${(fbxX * 180/Math.PI).toFixed(1)}° Y=${(fbxY * 180/Math.PI).toFixed(1)}° Z=${(fbxZ * 180/Math.PI).toFixed(1)}°`);
-                        console.log(`  Converted: X=${(x * 180/Math.PI).toFixed(1)}° Y=${(y * 180/Math.PI).toFixed(1)}° Z=${(z * 180/Math.PI).toFixed(1)}°`);
-                        console.log(`  Quaternion: [${quat.map(v => v.toFixed(3)).join(', ')}]`);
-                    }
+					quaternions.push(quat[0], quat[1], quat[2], quat[3]);
+					
+					// Debug: Log first frame of specific bones
+					if (i === 0 && (vrmBoneName === 'hips' || vrmBoneName === 'leftShoulder' || vrmBoneName === 'leftUpperArm')) {
+						console.log(`\nDebug - ${vrmBoneName} first frame:`);
+						console.log(`  FBX Rotation: X=${(fbxX * 180/Math.PI).toFixed(1)}° Y=${(fbxY * 180/Math.PI).toFixed(1)}° Z=${(fbxZ * 180/Math.PI).toFixed(1)}°`);
+						console.log(`  PreRotation: X=${boneData.preRotation[0].toFixed(1)}° Y=${boneData.preRotation[1].toFixed(1)}° Z=${boneData.preRotation[2].toFixed(1)}°`);
+						console.log(`  Converted: X=${(x * 180/Math.PI).toFixed(1)}° Y=${(y * 180/Math.PI).toFixed(1)}° Z=${(z * 180/Math.PI).toFixed(1)}°`);
+						console.log(`  Quaternion: [${quat.map(v => v.toFixed(3)).join(', ')}]`);
+					}
 				}
 				
                 const rotationBuffer = Buffer.from(new Float32Array(quaternions).buffer);
@@ -698,30 +683,22 @@ class FbxToVrmaConverter {
                 
                 // Create translation values
                 const translations = [];
-                for (let i = 0; i < times.length; i++) {
-                    // FBX uses centimeters, convert to meters
-                    const fbxX = (boneData.translation.x?.values[i] || 0) / 100;
-                    const fbxY = (boneData.translation.y?.values[i] || 0) / 100;
-                    const fbxZ = (boneData.translation.z?.values[i] || 0) / 100;
-                    
-                    // FBX to glTF/VRM coordinate system conversion
-                    // Option 1: Just negate Z (most common)
-                    let x = fbxX;
-                    let y = fbxY;
-                    let z = -fbxZ;
-                    
-                    // Option 2: No conversion needed
-                    // let x = fbxX;
-                    // let y = fbxY;
-                    // let z = fbxZ;
-                    
-                    // Option 3: Swap axes (less common)
-                    // let x = fbxX;
-                    // let y = fbxZ;
-                    // let z = fbxY;
-                    
-                    translations.push(x, y, z);
-                }
+                
+				// Also update the translation conversion:
+				for (let i = 0; i < times.length; i++) {
+					// FBX uses centimeters, convert to meters
+					const fbxX = (boneData.translation.x?.values[i] || 0) / 100;
+					const fbxY = (boneData.translation.y?.values[i] || 0) / 100;
+					const fbxZ = (boneData.translation.z?.values[i] || 0) / 100;
+					
+					// FBX to glTF/VRM coordinate system conversion
+					// Negate Z axis for coordinate system conversion
+					let x = fbxX;
+					let y = fbxY;
+					let z = -fbxZ;
+					
+				//	translations.push(x, y, z);
+				}
                 
                 const translationBuffer = Buffer.from(new Float32Array(translations).buffer);
                 bufferData.push(translationBuffer);
@@ -984,30 +961,22 @@ class FbxToVrmaConverter {
     }
 
     ApplyPreRotation(x, y, z, preRotation, rotationOrder) {
-        // Apply pre-rotation to the animated rotation values
-        // Pre-rotation is applied before the animated rotation
-        
-        if (!preRotation || (preRotation[0] === 0 && preRotation[1] === 0 && preRotation[2] === 0)) {
-            return { x, y, z };
-        }
-        
-        // Convert pre-rotation to radians
-        const preX = preRotation[0] * Math.PI / 180;
-        const preY = preRotation[1] * Math.PI / 180;
-        const preZ = preRotation[2] * Math.PI / 180;
-        
-        // Convert both to quaternions and multiply
-        const animQuat = this.EulerToQuaternion(x, y, z, rotationOrder);
-        const preQuat = this.EulerToQuaternion(preX, preY, preZ, rotationOrder);
-       //preQuat[0]=-preQuat[0];
-       //preQuat[1]=-preQuat[1];
-       //preQuat[2]=-preQuat[2];
-        // Multiply quaternions: result = pre * anim
-        const result = this.MultiplyQuaternions(preQuat, animQuat);
-        
-        // Convert back to Euler (this is approximate)
-        return animQuat;
-    }
+		if (!preRotation || (preRotation[0] === 0 && preRotation[1] === 0 && preRotation[2] === 0)) {
+			return this.EulerToQuaternion(x, y, z, rotationOrder);
+		}
+		
+		const preX = preRotation[0] * Math.PI / 180;
+		const preY = preRotation[1] * Math.PI / 180;
+		const preZ = preRotation[2] * Math.PI / 180;
+		
+		const animQuat = this.EulerToQuaternion(x, y, z, rotationOrder);
+		const preQuat = this.EulerToQuaternion(preX, preY, preZ, rotationOrder);
+		
+		// Multiply quaternions: result = pre * anim
+		const result = this.MultiplyQuaternions( animQuat, preQuat);
+		//pre * anim * post
+		return preQuat;  // Return the combined rotation!
+	}
     
     MultiplyQuaternions(q1, q2) {
         // q1 * q2
@@ -1021,6 +990,38 @@ class FbxToVrmaConverter {
             w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
         ];
     }
+
+	ApplyRotations(x, y, z, preRotation, postRotation, rotationOrder) {
+		let quat = this.EulerToQuaternion(x, y, z, rotationOrder);
+		
+		if (preRotation && (preRotation[0] !== 0 || preRotation[1] !== 0 || preRotation[2] !== 0)) {
+			let preX = preRotation[0] * Math.PI / 180;
+			let preY = preRotation[1] * Math.PI / 180;
+			let preZ = preRotation[2] * Math.PI / 180;
+			
+			// Apply same coordinate conversion to pre-rotation
+			preX = -preX;
+			preY = -preY;
+			
+			const preQuat = this.EulerToQuaternion(preX, preY, preZ, rotationOrder);
+			quat = this.MultiplyQuaternions(preQuat, quat);
+		}
+		
+		if (postRotation && (postRotation[0] !== 0 || postRotation[1] !== 0 || postRotation[2] !== 0)) {
+			let postX = postRotation[0] * Math.PI / 180;
+			let postY = postRotation[1] * Math.PI / 180;
+			let postZ = postRotation[2] * Math.PI / 180;
+			
+			// Apply same coordinate conversion to post-rotation
+			postX = -postX;
+			postY = -postY;
+			
+			const postQuat = this.EulerToQuaternion(postX, postY, postZ, rotationOrder);
+			quat = this.MultiplyQuaternions(quat, postQuat);
+		}
+		
+		return quat;
+	}
     
     QuaternionToEuler(quat, order = 'XYZ') {
         const [x, y, z, w] = quat;
@@ -1062,8 +1063,11 @@ class FbxToVrmaConverter {
         return rotationOrders[orderValue] || 'XYZ';
     }
 
-    EulerToQuaternion(x, y, z, order = 'XYZ') {
+    EulerToQuaternion(ex, ey, ez, order = 'XYZ') {
 		
+		let x = ex;
+		let y = ey;
+		let z = ez;
 		const cos = Math.cos;
 		const sin = Math.sin;
 
