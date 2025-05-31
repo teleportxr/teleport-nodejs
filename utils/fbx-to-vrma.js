@@ -94,6 +94,41 @@ class FbxToVrmaConverter {
         this.connections = [];
         this.animationLength = 0;
         this.fps = 30;
+		// Define VRM skeleton hierarchy with explicit transforms
+		// Rotations are quaternions [x, y, z, w]
+		this.vrmSkeleton = [
+			// Core body - mostly pointing up along Y
+			{ name: "hips", parent: null, translation: [0, 1.0, 0], rotation: [0, 0, 0, 1] },
+			{ name: "spine", parent: "hips", translation: [0, 0.1, 0], rotation: [0, 0, 0, 1] },
+			{ name: "chest", parent: "spine", translation: [0, 0.15, 0], rotation: [0, 0, 0, 1] },
+			{ name: "upperChest", parent: "chest", translation: [0, 0.15, 0], rotation: [0, 0, 0, 1] },
+			{ name: "neck", parent: "upperChest", translation: [0, 0.1, 0], rotation: [0, 0, 0, 1] },
+			{ name: "head", parent: "neck", translation: [0, 0.15, 0], rotation: [0, 0, 0, 1] },
+			
+			// Left arm - T-pose
+			{ name: "leftShoulder", parent: "upperChest", translation: [0.05, 0.08, 0], rotation: [-0.5,-0.5,-0.5, 0.5] }, // 90° around Z
+			{ name: "leftUpperArm", parent: "leftShoulder", translation: [0, 0.08, 0], rotation: [0, 0, 0, 1] },
+			{ name: "leftLowerArm", parent: "leftUpperArm", translation: [0, 0.27, 0], rotation: [0, 0, 0, 1] },
+			{ name: "leftHand", parent: "leftLowerArm", translation: [0, 0.27, 0], rotation: [0, 0, 0, 1] },
+			
+			// Right arm - T-pose
+			{ name: "rightShoulder", parent: "upperChest", translation: [-0.05, 0.08, 0], rotation: [ 0.5, -0.5, 0.5, 0.5] }, // -90° around Z
+			{ name: "rightUpperArm", parent: "rightShoulder", translation: [0, 0.08, 0], rotation: [0, 0, 0, 1] },
+			{ name: "rightLowerArm", parent: "rightUpperArm", translation: [0, 0.27, 0], rotation: [0, 0, 0, 1] },
+			{ name: "rightHand", parent: "rightLowerArm", translation: [0, 0.27, 0], rotation: [0, 0, 0, 1] },
+			
+			// Left leg - pointing down
+			{ name: "leftUpperLeg", parent: "hips", translation: [0.09, -0.05, 0], rotation: [0, 0, 1, 0] }, // 180° around Z
+			{ name: "leftLowerLeg", parent: "leftUpperLeg", translation: [0, 0.42, 0], rotation: [0, 0, 0, 1] },
+			{ name: "leftFoot", parent: "leftLowerLeg", translation: [0, 0.42, 0], rotation: [0.707107, 0, 0, 0.707107] }, // 90° around X
+			{ name: "leftToes", parent: "leftFoot", translation: [0, 0.13, 0], rotation: [0, 0, 0, 1] },
+			
+			// Right leg - pointing down
+			{ name: "rightUpperLeg", parent: "hips", translation: [-0.09, -0.05, 0], rotation: [0, 0, 1, 0] }, // 180° around Z
+			{ name: "rightLowerLeg", parent: "rightUpperLeg", translation: [0, 0.42, 0], rotation: [0, 0, 0, 1] },
+			{ name: "rightFoot", parent: "rightLowerLeg", translation: [0, 0.42, 0], rotation: [0.707107, 0, 0, 0.707107] }, // 90° around X
+			{ name: "rightToes", parent: "rightFoot", translation: [0, 0.13, 0], rotation: [0, 0, 0, 1] }
+		];
     }
 
     // Helper function to map bone names flexibly
@@ -479,9 +514,9 @@ class FbxToVrmaConverter {
             fps: this.fps
         };
     }
-	GetVrmBone(vrmNodes, vrmBoneName)
+	GetVrmBone( vrmBoneName)
 	{
-		for(const vrmBone of vrmNodes)
+		for(const vrmBone of this.vrmSkeleton)
 		{
 			if (vrmBone.name == vrmBoneName)
 					return vrmBone;
@@ -542,10 +577,13 @@ class FbxToVrmaConverter {
 
         // Process each bone
         for (const [vrmBoneName, boneData] of Object.entries(animationData)) {
+            console.log(`Add bone: ${vrmBoneName}`);
             const humanBone = {};
             
             // Initialize animation data for this bone
             this.animationData[vrmBoneName] = {};
+
+			const vrmBone = this.GetVrmBone(vrmBoneName);
             
             // Process rotation
             if (boneData.rotation.x || boneData.rotation.y || boneData.rotation.z) {
@@ -578,24 +616,38 @@ class FbxToVrmaConverter {
                 
                 const timeAccessorIndex = accessorIndex++;
                 bufferOffset += timeBuffer.length;
+                    
+                // Convert Euler to quaternion using the bone's rotation order
+                const rotationOrder = boneData.rotationOrder || 'XYZ';
+                
+				var preRotation= this.GetPreRotation(boneData.preRotation, rotationOrder);
+				if(vrmBone!=null && vrmBone.rotation)
+				{
+					preRotation=vrmBone.rotation;
+				}
                 
                 // Create rotation values (convert Euler to quaternion)
                 const quaternions = [];
                 for (let i = 0; i < times.length; i++) {
                     // FBX uses degrees, convert to radians
-                    // Also handle coordinate system differences
-                    let x = (boneData.rotation.x?.values[i] || 0) * Math.PI / 180;
-                    let y = (boneData.rotation.y?.values[i] || 0) * Math.PI / 180;
-                    let z = (boneData.rotation.z?.values[i] || 0) * Math.PI / 180;
+                    const fbxX = (boneData.rotation.x?.values[i] || 0) * Math.PI / 180;
+                    const fbxY = (boneData.rotation.y?.values[i] || 0) * Math.PI / 180;
+                    const fbxZ = (boneData.rotation.z?.values[i] || 0) * Math.PI / 180;
                     
-                    // FBX to glTF/VRM coordinate system conversion
-                    // This may need adjustment based on your specific FBX export settings
-                    // Common conversion: negate rotation around X axis
-                    //x = -x;
-                    
-                    // Convert Euler to quaternion
-                    const quat = this.EulerToQuaternion(x, y, z);
-                    quaternions.push(...quat);
+                    let x = fbxX;
+                    let y = fbxY;
+                    let z = fbxZ;
+
+					const animQuat = this.EulerToQuaternion(x, y, z, rotationOrder);
+					const quat =preRotation;// this.MultiplyQuaternions( preRotation, animQuat);
+					quaternions.push(quat[0], quat[1], quat[2], quat[3]);
+                    // Debug: Log first frame of each bone
+                    if (i === 0 && vrmBoneName === 'hips') {
+                        console.log(`\nDebug - ${vrmBoneName} first frame:`);
+                        console.log(`  FBX Rotation: X=${(fbxX * 180/Math.PI).toFixed(1)}° Y=${(fbxY * 180/Math.PI).toFixed(1)}° Z=${(fbxZ * 180/Math.PI).toFixed(1)}°`);
+                        console.log(`  Converted: X=${(x * 180/Math.PI).toFixed(1)}° Y=${(y * 180/Math.PI).toFixed(1)}° Z=${(z * 180/Math.PI).toFixed(1)}°`);
+                        console.log(`  Quaternion: [${quat.map(v => v.toFixed(3)).join(', ')}]`);
+                    }
 				}
 				
                 const rotationBuffer = Buffer.from(new Float32Array(quaternions).buffer);
@@ -681,15 +733,27 @@ class FbxToVrmaConverter {
                 const translations = [];
                 for (let i = 0; i < times.length; i++) {
                     // FBX uses centimeters, convert to meters
-                    let x = (boneData.translation.x?.values[i] || 0) / 100;
-                    let y = (boneData.translation.y?.values[i] || 0) / 100;
-                    let z = (boneData.translation.z?.values[i] || 0) / 100;
+                    const fbxX = (boneData.translation.x?.values[i] || 0) / 100;
+                    const fbxY = (boneData.translation.y?.values[i] || 0) / 100;
+                    const fbxZ = (boneData.translation.z?.values[i] || 0) / 100;
                     
                     // FBX to glTF/VRM coordinate system conversion
-                    // Mixamo/FBX often has Z forward, -Y up
-                    // glTF/VRM has -Z forward, Y up
-                    // This may need adjustment based on your specific FBX export settings
-                    translations.push(-x, y, -z);
+                    // Option 1: Just negate Z (most common)
+                    let x = fbxX;
+					let y = fbxY;
+					let z = fbxZ;
+                    
+                    // Option 2: No conversion needed
+                    // let x = fbxX;
+                    // let y = fbxY;
+                    // let z = fbxZ;
+                    
+                    // Option 3: Swap axes (less common)
+                    // let x = fbxX;
+                    // let y = fbxZ;
+                    // let z = fbxY;
+                    
+                    translations.push(x, y, z);
                 }
                 
                 const translationBuffer = Buffer.from(new Float32Array(translations).buffer);
@@ -808,45 +872,10 @@ class FbxToVrmaConverter {
 		const nodes = [];
 		const nodeIndices = {};
 		
-		// Define VRM skeleton hierarchy with explicit transforms
-		// Rotations are quaternions [x, y, z, w]
-		const vrmSkeleton = [
-			// Core body - mostly pointing up along Y
-			{ name: "hips", parent: null, translation: [0, 1.0, 0], rotation: [0, 0, 0, 1] },
-			{ name: "spine", parent: "hips", translation: [0, 0.1, 0], rotation: [0, 0, 0, 1] },
-			{ name: "chest", parent: "spine", translation: [0, 0.15, 0], rotation: [0, 0, 0, 1] },
-			{ name: "upperChest", parent: "chest", translation: [0, 0.15, 0], rotation: [0, 0, 0, 1] },
-			{ name: "neck", parent: "upperChest", translation: [0, 0.1, 0], rotation: [0, 0, 0, 1] },
-			{ name: "head", parent: "neck", translation: [0, 0.15, 0], rotation: [0, 0, 0, 1] },
-			
-			// Left arm - T-pose
-			{ name: "leftShoulder", parent: "upperChest", translation: [0., 0.0, 0], rotation: [-0.5, -0.5, -0.5, 0.5] }, // 90° around Z
-			{ name: "leftUpperArm", parent: "leftShoulder", translation: [0, 0.08, 0], rotation: [0, 0, 0, 1] },
-			{ name: "leftLowerArm", parent: "leftUpperArm", translation: [0, 0.27, 0], rotation: [0, 0, 0, 1] },
-			{ name: "leftHand", parent: "leftLowerArm", translation: [0, 0.27, 0], rotation: [0, 0, 0, 1] },
-			
-			// Right arm - T-pose
-			{ name: "rightShoulder", parent: "upperChest", translation: [-0.05, 0.08, 0], rotation: [0, 0, 0, 1] }, // -90° around Z
-			{ name: "rightUpperArm", parent: "rightShoulder", translation: [0, 0.08, 0], rotation: [0, 0, 0, 1] },
-			{ name: "rightLowerArm", parent: "rightUpperArm", translation: [0, 0.27, 0], rotation: [0, 0, 0, 1] },
-			{ name: "rightHand", parent: "rightLowerArm", translation: [0, 0.27, 0], rotation: [0, 0, 0, 1] },
-			
-			// Left leg - pointing down
-			{ name: "leftUpperLeg", parent: "hips", translation: [0.09, -0.05, 0], rotation: [0, 0, 0, -1] }, // 180° around Z
-			{ name: "leftLowerLeg", parent: "leftUpperLeg", translation: [0, 0.42, 0], rotation: [0, 0, 0, 1] },
-			{ name: "leftFoot", parent: "leftLowerLeg", translation: [0, 0.42, 0], rotation: [0.707107, 0, 0, 0.707107] }, // 90° around X
-			{ name: "leftToes", parent: "leftFoot", translation: [0, 0.13, 0], rotation: [0, 0, 0, 1] },
-			
-			// Right leg - pointing down
-			{ name: "rightUpperLeg", parent: "hips", translation: [-0.09, -0.05, 0], rotation: [0, 0, 0, -1] }, // 180° around Z
-			{ name: "rightLowerLeg", parent: "rightUpperLeg", translation: [0, 0.42, 0], rotation: [0, 0, 0, 1] },
-			{ name: "rightFoot", parent: "rightLowerLeg", translation: [0, 0.42, 0], rotation: [0.707107, 0, 0, 0.707107] }, // 90° around X
-			{ name: "rightToes", parent: "rightFoot", translation: [0, 0.13, 0], rotation: [0, 0, 0, 1] }
-		];
 		
 		// Create nodes and build index map
-		for (let i = 0; i < vrmSkeleton.length; i++) {
-			const bone = vrmSkeleton[i];
+		for (let i = 0; i < this.vrmSkeleton.length; i++) {
+			const bone = this.vrmSkeleton[i];
 			const node = {
 				name: bone.name,
 				translation: bone.translation
@@ -864,8 +893,8 @@ class FbxToVrmaConverter {
 		}
 		
 		// Set up parent-child relationships
-		for (let i = 0; i < vrmSkeleton.length; i++) {
-			const bone = vrmSkeleton[i];
+		for (let i = 0; i < this.vrmSkeleton.length; i++) {
+			const bone = this.vrmSkeleton[i];
 			if (bone.parent && nodeIndices[bone.parent] !== undefined) {
 				const parentIndex = nodeIndices[bone.parent];
 				if (!nodes[parentIndex].children) {
