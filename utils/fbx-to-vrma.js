@@ -175,7 +175,57 @@ class FbxToVrmaConverter {
                 const id = match[1];
                 const name = match[2];
                 
-                this.objects.models[id] = { id, name, type: 'Model' };
+                this.objects.models[id] = { 
+                    id, 
+                    name, 
+                    type: 'Model',
+                    properties: {
+                        'Lcl Translation': [0, 0, 0],
+                        'Lcl Rotation': [0, 0, 0],
+                        'Lcl Scaling': [1, 1, 1],
+                        'PreRotation': [0, 0, 0],
+                        'PostRotation': [0, 0, 0],
+                        'RotationPivot': [0, 0, 0],
+                        'ScalingPivot': [0, 0, 0],
+                        'RotationOffset': [0, 0, 0],
+                        'ScalingOffset': [0, 0, 0],
+                        'RotationOrder': 0
+                    }
+                };
+                
+                // Look for properties in the following lines
+                let i = startIndex + 1;
+                let braceLevel = 1;
+                
+                while (i < lines.length && braceLevel > 0) {
+                    const propLine = lines[i].trim();
+                    
+                    // Track braces
+                    if (propLine.includes('{')) braceLevel++;
+                    if (propLine.includes('}')) braceLevel--;
+                    
+                    // Parse property lines
+                    if (propLine.includes('P:')) {
+                        // FBX property format: P: "name", "type", "flags", "flags2", value1, value2, value3
+                        const propMatch = propLine.match(/P:\s*"([^"]+)"[^,]*,[^,]*,[^,]*,[^,]*,\s*([-\d.]+)(?:,\s*([-\d.]+))?(?:,\s*([-\d.]+))?/);
+                        if (propMatch) {
+                            const propName = propMatch[1];
+                            const val1 = parseFloat(propMatch[2]) || 0;
+                            const val2 = parseFloat(propMatch[3]) || 0;
+                            const val3 = parseFloat(propMatch[4]) || 0;
+                            
+                            if (propName === 'RotationOrder') {
+                                this.objects.models[id].properties[propName] = Math.round(val1);
+                            } else if (this.objects.models[id].properties.hasOwnProperty(propName)) {
+                                this.objects.models[id].properties[propName] = [val1, val2, val3];
+                            }
+                        }
+                    }
+                    
+                    i++;
+                }
+                
+                return i;
             }
             return startIndex + 1;
         }
@@ -386,7 +436,10 @@ class FbxToVrmaConverter {
                 if (!animationData[vrmBoneName]) {
                     animationData[vrmBoneName] = {
                         rotation: { x: null, y: null, z: null },
-                        translation: { x: null, y: null, z: null }
+                        translation: { x: null, y: null, z: null },
+                        rotationOrder: this.GetRotationOrder(model.properties.RotationOrder || 0),
+                        preRotation: model.properties.PreRotation || [0, 0, 0],
+                        postRotation: model.properties.PostRotation || [0, 0, 0]
                     };
                 }
                 
@@ -405,7 +458,7 @@ class FbxToVrmaConverter {
                         animationData[vrmBoneName].rotation.x = curves[0];
                         animationData[vrmBoneName].rotation.y = curves[1];
                         animationData[vrmBoneName].rotation.z = curves[2];
-                        console.log(`Assigned rotation curves to ${vrmBoneName} (${model.name})`);
+                        console.log(`Assigned rotation curves to ${vrmBoneName} (${model.name}) with order ${animationData[vrmBoneName].rotationOrder}`);
                     } else if (property === 'translation') {
                         animationData[vrmBoneName].translation.x = curves[0];
                         animationData[vrmBoneName].translation.y = curves[1];
@@ -426,7 +479,15 @@ class FbxToVrmaConverter {
             fps: this.fps
         };
     }
-
+	GetVrmBone(vrmNodes, vrmBoneName)
+	{
+		for(const vrmBone of vrmNodes)
+		{
+			if (vrmBone.name == vrmBoneName)
+					return vrmBone;
+		}
+		return null;
+	}
     ConvertToVrma(data, outputPath) {
         console.log('\nConverting to VRMA format...');
         
@@ -535,8 +596,8 @@ class FbxToVrmaConverter {
                     // Convert Euler to quaternion
                     const quat = this.EulerToQuaternion(x, y, z);
                     quaternions.push(...quat);
-                }
-                
+				}
+				
                 const rotationBuffer = Buffer.from(new Float32Array(quaternions).buffer);
                 bufferData.push(rotationBuffer);
                 
@@ -681,7 +742,6 @@ class FbxToVrmaConverter {
             
             if (Object.keys(humanBone).length > 0) {
                 vrmaData.extensions.VRMC_vrm_animation.humanoid.humanBones[vrmBoneName] = humanBone;
-                console.log(`Added bone: ${vrmBoneName}`);
             }
         }
 
@@ -744,98 +804,106 @@ class FbxToVrmaConverter {
         console.log(`GLB file written to: ${outputPath}`);
         console.log(`Animated bones: ${Object.keys(vrmaData.extensions.VRMC_vrm_animation.humanoid.humanBones).length}`);
     }
-
-    CreateVrmSkeletonNodes() {
-        const nodes = [];
-        const nodeIndices = {};
-        
-        // Define VRM skeleton hierarchy with standard T-pose transforms
-        const vrmSkeleton = [
-            { name: "hips", parent: null, translation: [0, 1.0, 0] },
-            { name: "spine", parent: "hips", translation: [0, 0.1, 0] },
-            { name: "chest", parent: "spine", translation: [0, 0.1, 0] },
-            { name: "upperChest", parent: "chest", translation: [0, 0.1, 0] },
-            { name: "neck", parent: "upperChest", translation: [0, 0.1, 0] },
-            { name: "head", parent: "neck", translation: [0, 0.1, 0] },
-            
-            // Left arm
-            { name: "leftShoulder", parent: "upperChest", translation: [0.05, 0.08, 0] },
-            { name: "leftUpperArm", parent: "leftShoulder", translation: [0.12, 0, 0] },
-            { name: "leftLowerArm", parent: "leftUpperArm", translation: [0.27, 0, 0] },
-            { name: "leftHand", parent: "leftLowerArm", translation: [0.27, 0, 0] },
-            
-            // Right arm
-            { name: "rightShoulder", parent: "upperChest", translation: [-0.05, 0.08, 0] },
-            { name: "rightUpperArm", parent: "rightShoulder", translation: [-0.12, 0, 0] },
-            { name: "rightLowerArm", parent: "rightUpperArm", translation: [-0.27, 0, 0] },
-            { name: "rightHand", parent: "rightLowerArm", translation: [-0.27, 0, 0] },
-            
-            // Left leg
-            { name: "leftUpperLeg", parent: "hips", translation: [0.09, -0.05, 0] },
-            { name: "leftLowerLeg", parent: "leftUpperLeg", translation: [0, -0.42, 0] },
-            { name: "leftFoot", parent: "leftLowerLeg", translation: [0, -0.42, 0] },
-            { name: "leftToes", parent: "leftFoot", translation: [0, -0.05, 0.12] },
-            
-            // Right leg
-            { name: "rightUpperLeg", parent: "hips", translation: [-0.09, -0.05, 0] },
-            { name: "rightLowerLeg", parent: "rightUpperLeg", translation: [0, -0.42, 0] },
-            { name: "rightFoot", parent: "rightLowerLeg", translation: [0, -0.42, 0] },
-            { name: "rightToes", parent: "rightFoot", translation: [0, -0.05, 0.12] }
-        ];
-        
-        // Create nodes and build index map
-        for (let i = 0; i < vrmSkeleton.length; i++) {
-            const bone = vrmSkeleton[i];
-            const node = {
-                name: bone.name,
-                translation: bone.translation
-            };
-            
-            nodes.push(node);
-            nodeIndices[bone.name] = i;
-        }
-        
-        // Set up parent-child relationships
-        for (let i = 0; i < vrmSkeleton.length; i++) {
-            const bone = vrmSkeleton[i];
-            if (bone.parent && nodeIndices[bone.parent] !== undefined) {
-                const parentIndex = nodeIndices[bone.parent];
-                if (!nodes[parentIndex].children) {
-                    nodes[parentIndex].children = [];
-                }
-                nodes[parentIndex].children.push(i);
-            }
-        }
-        
-        // Update animations to reference node indices
-        const animationChannels = [];
-        for (const [boneName, boneData] of Object.entries(this.animationData)) {
-            const nodeIndex = nodeIndices[boneName];
-            if (nodeIndex === undefined) continue;
-            
-            if (boneData.rotation && boneData.rotation.samplerIndex !== undefined) {
-                animationChannels.push({
-                    sampler: boneData.rotation.samplerIndex,
-                    target: {
-                        node: nodeIndex,
-                        path: "rotation"
-                    }
-                });
-            }
-            
-            if (boneData.translation && boneData.translation.samplerIndex !== undefined) {
-                animationChannels.push({
-                    sampler: boneData.translation.samplerIndex,
-                    target: {
-                        node: nodeIndex,
-                        path: "translation"
-                    }
-                });
-            }
-        }
-        
-        return { nodes, animationChannels, rootNodes: [nodeIndices["hips"]] };
-    }
+	CreateVrmSkeletonNodes() {
+		const nodes = [];
+		const nodeIndices = {};
+		
+		// Define VRM skeleton hierarchy with explicit transforms
+		// Rotations are quaternions [x, y, z, w]
+		const vrmSkeleton = [
+			// Core body - mostly pointing up along Y
+			{ name: "hips", parent: null, translation: [0, 1.0, 0], rotation: [0, 0, 0, 1] },
+			{ name: "spine", parent: "hips", translation: [0, 0.1, 0], rotation: [0, 0, 0, 1] },
+			{ name: "chest", parent: "spine", translation: [0, 0.15, 0], rotation: [0, 0, 0, 1] },
+			{ name: "upperChest", parent: "chest", translation: [0, 0.15, 0], rotation: [0, 0, 0, 1] },
+			{ name: "neck", parent: "upperChest", translation: [0, 0.1, 0], rotation: [0, 0, 0, 1] },
+			{ name: "head", parent: "neck", translation: [0, 0.15, 0], rotation: [0, 0, 0, 1] },
+			
+			// Left arm - T-pose
+			{ name: "leftShoulder", parent: "upperChest", translation: [0., 0.0, 0], rotation: [-0.5, -0.5, -0.5, 0.5] }, // 90° around Z
+			{ name: "leftUpperArm", parent: "leftShoulder", translation: [0, 0.08, 0], rotation: [0, 0, 0, 1] },
+			{ name: "leftLowerArm", parent: "leftUpperArm", translation: [0, 0.27, 0], rotation: [0, 0, 0, 1] },
+			{ name: "leftHand", parent: "leftLowerArm", translation: [0, 0.27, 0], rotation: [0, 0, 0, 1] },
+			
+			// Right arm - T-pose
+			{ name: "rightShoulder", parent: "upperChest", translation: [-0.05, 0.08, 0], rotation: [0, 0, 0, 1] }, // -90° around Z
+			{ name: "rightUpperArm", parent: "rightShoulder", translation: [0, 0.08, 0], rotation: [0, 0, 0, 1] },
+			{ name: "rightLowerArm", parent: "rightUpperArm", translation: [0, 0.27, 0], rotation: [0, 0, 0, 1] },
+			{ name: "rightHand", parent: "rightLowerArm", translation: [0, 0.27, 0], rotation: [0, 0, 0, 1] },
+			
+			// Left leg - pointing down
+			{ name: "leftUpperLeg", parent: "hips", translation: [0.09, -0.05, 0], rotation: [0, 0, 0, -1] }, // 180° around Z
+			{ name: "leftLowerLeg", parent: "leftUpperLeg", translation: [0, 0.42, 0], rotation: [0, 0, 0, 1] },
+			{ name: "leftFoot", parent: "leftLowerLeg", translation: [0, 0.42, 0], rotation: [0.707107, 0, 0, 0.707107] }, // 90° around X
+			{ name: "leftToes", parent: "leftFoot", translation: [0, 0.13, 0], rotation: [0, 0, 0, 1] },
+			
+			// Right leg - pointing down
+			{ name: "rightUpperLeg", parent: "hips", translation: [-0.09, -0.05, 0], rotation: [0, 0, 0, -1] }, // 180° around Z
+			{ name: "rightLowerLeg", parent: "rightUpperLeg", translation: [0, 0.42, 0], rotation: [0, 0, 0, 1] },
+			{ name: "rightFoot", parent: "rightLowerLeg", translation: [0, 0.42, 0], rotation: [0.707107, 0, 0, 0.707107] }, // 90° around X
+			{ name: "rightToes", parent: "rightFoot", translation: [0, 0.13, 0], rotation: [0, 0, 0, 1] }
+		];
+		
+		// Create nodes and build index map
+		for (let i = 0; i < vrmSkeleton.length; i++) {
+			const bone = vrmSkeleton[i];
+			const node = {
+				name: bone.name,
+				translation: bone.translation
+			};
+			
+			// Only add rotation if it's not identity
+			if (bone.rotation && 
+				(bone.rotation[0] !== 0 || bone.rotation[1] !== 0 || 
+				bone.rotation[2] !== 0 || bone.rotation[3] !== 1)) {
+				node.rotation = bone.rotation;
+			}
+			
+			nodes.push(node);
+			nodeIndices[bone.name] = i;
+		}
+		
+		// Set up parent-child relationships
+		for (let i = 0; i < vrmSkeleton.length; i++) {
+			const bone = vrmSkeleton[i];
+			if (bone.parent && nodeIndices[bone.parent] !== undefined) {
+				const parentIndex = nodeIndices[bone.parent];
+				if (!nodes[parentIndex].children) {
+					nodes[parentIndex].children = [];
+				}
+				nodes[parentIndex].children.push(i);
+			}
+		}
+		
+		// Update animations to reference node indices
+		const animationChannels = [];
+		for (const [boneName, boneData] of Object.entries(this.animationData)) {
+			const nodeIndex = nodeIndices[boneName];
+			if (nodeIndex === undefined) continue;
+			
+			if (boneData.rotation && boneData.rotation.samplerIndex !== undefined) {
+				animationChannels.push({
+					sampler: boneData.rotation.samplerIndex,
+					target: {
+						node: nodeIndex,
+						path: "rotation"
+					}
+				});
+			}
+			
+			if (boneData.translation && boneData.translation.samplerIndex !== undefined) {
+				animationChannels.push({
+					sampler: boneData.translation.samplerIndex,
+					target: {
+						node: nodeIndex,
+						path: "translation"
+					}
+				});
+			}
+		}
+		
+		return { nodes, animationChannels, rootNodes: [nodeIndices["hips"]] };
+	}
 
     CreateGlbFile(gltfData, binaryBuffer, outputPath) {
         // Remove the uri from buffer definition for GLB
@@ -891,26 +959,106 @@ class FbxToVrmaConverter {
         fs.writeFileSync(outputPath, glb);
     }
 
-    EulerToQuaternion(x, y, z) {
-        // Convert Euler angles (in radians) to quaternion
-        // FBX typically uses XYZ rotation order
-        // glTF expects quaternions in XYZW order
+    GetPreRotation( preRotation, rotationOrder) {
+		if (!preRotation || (preRotation[0] === 0 && preRotation[1] === 0 && preRotation[2] === 0)) {
+			return [0,0,0,1.0];	//this.EulerToQuaternion(x, y, z, rotationOrder);
+		}
+		//	return [0,0,0,1.0];
+		const preX = preRotation[0] * Math.PI / 180;
+		const preY = preRotation[1] * Math.PI / 180;
+		const preZ = preRotation[2] * Math.PI / 180;
+		const preQuat = this.EulerToQuaternion(preX, preY, preZ, rotationOrder);
+		return preQuat;  
+	}
+    
+    MultiplyQuaternions(q1, q2) {
+        // q1 * q2
+        const [x1, y1, z1, w1] = q1;
+        const [x2, y2, z2, w2] = q2;
         
-        const c1 = Math.cos(x / 2);
-        const c2 = Math.cos(y / 2);
-        const c3 = Math.cos(z / 2);
-        const s1 = Math.sin(x / 2);
-        const s2 = Math.sin(y / 2);
-        const s3 = Math.sin(z / 2);
-        
-        // XYZ rotation order (most common for FBX)
-        const qx = s1 * c2 * c3 + c1 * s2 * s3;
-        const qy = c1 * s2 * c3 - s1 * c2 * s3;
-        const qz = c1 * c2 * s3 + s1 * s2 * c3;
-        const qw = c1 * c2 * c3 - s1 * s2 * s3;
-        
-        // Return in XYZW order as expected by glTF
-        return [qx, qy, qz, qw];
+        return [
+            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+            w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+            w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
+        ];
+    }
+    
+    GetRotationOrder(orderValue) {
+        // FBX rotation order enum values
+        const rotationOrders = {
+            0: 'XYZ',
+            1: 'XZY',
+            2: 'YZX',
+            3: 'YXZ',
+            4: 'ZXY',
+            5: 'ZYX',
+            6: 'SphericXYZ' // Rarely used
+        };
+        return rotationOrders[orderValue] || 'XYZ';
+    }
+
+    EulerToQuaternion(x, y, z, order = 'XYZ') {
+		
+		const cos = Math.cos;
+		const sin = Math.sin;
+
+		const c1 = cos( x / 2 );
+		const c2 = cos( y / 2 );
+		const c3 = cos( z / 2 );
+
+		const s1 = sin( x / 2 );
+		const s2 = sin( y / 2 );
+		const s3 = sin( z / 2 );
+		var q={x:0,y:0,z:0,w:0};
+		switch ( order ) {
+
+			case 'XYZ':
+				q.x = s1 * c2 * c3 + c1 * s2 * s3;
+				q.y = c1 * s2 * c3 - s1 * c2 * s3;
+				q.z = c1 * c2 * s3 + s1 * s2 * c3;
+				q.w = c1 * c2 * c3 - s1 * s2 * s3;
+				break;
+
+			case 'YXZ':
+				q.x = s1 * c2 * c3 + c1 * s2 * s3;
+				q.y = c1 * s2 * c3 - s1 * c2 * s3;
+				q.z = c1 * c2 * s3 - s1 * s2 * c3;
+				q.w = c1 * c2 * c3 + s1 * s2 * s3;
+				break;
+
+			case 'ZXY':
+				q.x = s1 * c2 * c3 - c1 * s2 * s3;
+				q.y = c1 * s2 * c3 + s1 * c2 * s3;
+				q.z = c1 * c2 * s3 + s1 * s2 * c3;
+				q.w = c1 * c2 * c3 - s1 * s2 * s3;
+				break;
+
+			case 'ZYX':
+				q.x = s1 * c2 * c3 - c1 * s2 * s3;
+				q.y = c1 * s2 * c3 + s1 * c2 * s3;
+				q.z = c1 * c2 * s3 - s1 * s2 * c3;
+				q.w = c1 * c2 * c3 + s1 * s2 * s3;
+				break;
+
+			case 'YZX':
+				q.x = s1 * c2 * c3 + c1 * s2 * s3;
+				q.y = c1 * s2 * c3 + s1 * c2 * s3;
+				q.z = c1 * c2 * s3 - s1 * s2 * c3;
+				q.w = c1 * c2 * c3 - s1 * s2 * s3;
+				break;
+
+			case 'XZY':
+				q.x = s1 * c2 * c3 - c1 * s2 * s3;
+				q.y = c1 * s2 * c3 - s1 * c2 * s3;
+				q.z = c1 * c2 * s3 + s1 * s2 * c3;
+				q.w = c1 * c2 * c3 + s1 * s2 * s3;
+				break;
+
+			default:
+				break;
+		}
+		return [q.x,q.y,q.z,q.w];
     }
 
     Convert(inputPath, outputPath) {
