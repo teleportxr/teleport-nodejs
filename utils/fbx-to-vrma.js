@@ -569,11 +569,20 @@ class FbxToVrmaConverter {
 	}
 
 	ParseFbxFloatArray(line) {
-		const cleanLine = line.replace(/^\s*a:\s*/, "");
-		return cleanLine
-			.split(",")
-			.map((v) => parseFloat(v.trim()))
-			.filter((v) => !isNaN(v));
+		// Check if the line format is correct
+		console.log('Parsing float array from line:', line.substring(0, 100) + '...');
+		
+		const cleanLine = line.replace(/^\s*a:\s*/, '');
+		const values = cleanLine.split(',').map(v => parseFloat(v.trim())).filter(v => !isNaN(v));
+		
+		// Debug: Check for unexpected values
+		for (let i = 1; i < values.length; i++) {
+			if (Math.abs(values[i] - values[i-1]) > 100) { // Large jump
+				console.warn(`Large value jump detected: ${values[i-1]} -> ${values[i]} at index ${i}`);
+			}
+		}
+		
+		return values;
 	}
 
 	ParseFbxTimeArray(line) {
@@ -810,27 +819,29 @@ class FbxToVrmaConverter {
 				boneData.rotation.y ||
 				boneData.rotation.z
 			) {
-				// Get the time array from any available curve
-				const timeCurve =
-					boneData.rotation.x ||
-					boneData.rotation.y ||
-					boneData.rotation.z;
-				const times = timeCurve.times;
-
-				if (times.length === 0) continue;
+				// Get the union of all time values from all three curves
+				const allTimes = new Set();
+				if (boneData.rotation.x) boneData.rotation.x.times.forEach(t => allTimes.add(t));
+				if (boneData.rotation.y) boneData.rotation.y.times.forEach(t => allTimes.add(t));
+				if (boneData.rotation.z) boneData.rotation.z.times.forEach(t => allTimes.add(t));
+				
+				// Convert to sorted array
+				const unifiedTimes = Array.from(allTimes).sort((a, b) => a - b);
+				
+				if (unifiedTimes.length === 0) continue;
 
 				// Create time accessor
-				const timeBuffer = Buffer.from(new Float32Array(times).buffer);
+				const timeBuffer = Buffer.from(new Float32Array(unifiedTimes).buffer);
 				bufferData.push(timeBuffer);
 
 				vrmaData.accessors.push({
 					bufferView: vrmaData.bufferViews.length,
 					byteOffset: 0,
 					componentType: 5126, // FLOAT
-					count: times.length,
+					count: unifiedTimes.length,
 					type: "SCALAR",
-					min: [Math.min(...times)],
-					max: [Math.max(...times)],
+					min: [Math.min(...unifiedTimes)],
+					max: [Math.max(...unifiedTimes)],
 				});
 
 				vrmaData.bufferViews.push({
@@ -856,14 +867,11 @@ class FbxToVrmaConverter {
 
 				// Create rotation values (convert Euler to quaternion)
 				const quaternions = [];
-				for (let i = 0; i < times.length; i++) {
-					// FBX uses degrees, convert to radians
-					const fbxX =
-						((boneData.rotation.x?.values[i] || 0) * Math.PI) / 180;
-					const fbxY =
-						((boneData.rotation.y?.values[i] || 0) * Math.PI) / 180;
-					const fbxZ =
-						((boneData.rotation.z?.values[i] || 0) * Math.PI) / 180;
+				for (const time of unifiedTimes) {
+					// Interpolate rotation values at this time
+					const fbxX = this.InterpolateValue(boneData.rotation.x, time) * Math.PI / 180;
+					const fbxY = this.InterpolateValue(boneData.rotation.y, time) * Math.PI / 180;
+					const fbxZ = this.InterpolateValue(boneData.rotation.z, time) * Math.PI / 180;
 
 					let x = fbxX;
 					let y = fbxY;
@@ -880,31 +888,6 @@ class FbxToVrmaConverter {
 						animQuat
 					);
 					quaternions.push(quat[0], quat[1], quat[2], quat[3]);
-					// Debug: Log first frame of each bone
-					if (i === 0 && vrmBoneName === "hips") {
-						console.log(`\nDebug - ${vrmBoneName} first frame:`);
-						console.log(
-							`  FBX Rotation: X=${(
-								(fbxX * 180) /
-								Math.PI
-							).toFixed(1)}° Y=${((fbxY * 180) / Math.PI).toFixed(
-								1
-							)}° Z=${((fbxZ * 180) / Math.PI).toFixed(1)}°`
-						);
-						console.log(
-							`  Converted: X=${((x * 180) / Math.PI).toFixed(
-								1
-							)}° Y=${((y * 180) / Math.PI).toFixed(1)}° Z=${(
-								(z * 180) /
-								Math.PI
-							).toFixed(1)}°`
-						);
-						console.log(
-							`  Quaternion: [${quat
-								.map((v) => v.toFixed(3))
-								.join(", ")}]`
-						);
-					}
 				}
 
 				const rotationBuffer = Buffer.from(
@@ -916,7 +899,7 @@ class FbxToVrmaConverter {
 					bufferView: vrmaData.bufferViews.length,
 					byteOffset: 0,
 					componentType: 5126, // FLOAT
-					count: times.length,
+					count: unifiedTimes.length,
 					type: "VEC4",
 					min: undefined, // Optional for rotations
 					max: undefined,
@@ -963,26 +946,35 @@ class FbxToVrmaConverter {
 				boneData.translation.y ||
 				boneData.translation.z
 			) {
-				const timeCurve =
-					boneData.translation.x ||
-					boneData.translation.y ||
-					boneData.translation.z;
-				const times = timeCurve.times;
+				// Get the union of all time values from all three curves
+				const allTimes = new Set();
+				if (boneData.translation.x) boneData.translation.x.times.forEach(t => allTimes.add(t));
+				if (boneData.translation.y) boneData.translation.y.times.forEach(t => allTimes.add(t));
+				if (boneData.translation.z) boneData.translation.z.times.forEach(t => allTimes.add(t));
+				
+				// Convert to sorted array
+				const unifiedTimes = Array.from(allTimes).sort((a, b) => a - b);
+				
+				if (unifiedTimes.length === 0) continue;
 
-				if (times.length === 0) continue;
+				// Debug
+				if (vrmBoneName === 'hips') {
+					console.log(`Hips translation curve lengths: X=${boneData.translation.x?.times.length}, Y=${boneData.translation.y?.times.length}, Z=${boneData.translation.z?.times.length}`);
+					console.log(`Unified time points: ${unifiedTimes.length}`);
+				}
 
 				// Create time accessor
-				const timeBuffer = Buffer.from(new Float32Array(times).buffer);
+				const timeBuffer = Buffer.from(new Float32Array(unifiedTimes).buffer);
 				bufferData.push(timeBuffer);
 
 				vrmaData.accessors.push({
 					bufferView: vrmaData.bufferViews.length,
 					byteOffset: 0,
 					componentType: 5126,
-					count: times.length,
+					count: unifiedTimes.length,
 					type: "SCALAR",
-					min: [Math.min(...times)],
-					max: [Math.max(...times)],
+					min: [Math.min(...unifiedTimes)],
+					max: [Math.max(...unifiedTimes)],
 				});
 
 				vrmaData.bufferViews.push({
@@ -995,53 +987,18 @@ class FbxToVrmaConverter {
 				const timeAccessorIndex = accessorIndex++;
 				bufferOffset += timeBuffer.length;
 
-				if (vrmBoneName === "hips" && boneData.translation.z) {
-					console.log("\nHips Z translation debug:");
-					console.log(
-						"Number of Z values:",
-						boneData.translation.z.values.length
-					);
-					console.log(
-						"Z values (first 10):",
-						boneData.translation.z.values.slice(0, 10)
-					);
-					console.log(
-						"Time values (first 10):",
-						boneData.translation.z.times.slice(0, 10)
-					);
-				}
 				// Create translation values
 				const translations = [];
-				let prevZ = null;
-				for (let i = 0; i < times.length; i++) {
-					// FBX uses centimeters, convert to meters
-					const fbxX = (boneData.translation.x?.values[i] || 0) / 100;
-					const fbxY = (boneData.translation.y?.values[i] || 0) / 100;
-					const fbxZ = (boneData.translation.z?.values[i] || 0) / 100;
-					// Debug Z-direction changes
-					// More detailed debug for the reversal
-					if (!boneData.translation.z?.values[i]) {
-						console.warn(
-							`Frame ${i}: Raw Z=${boneData.translation.z?.values[i]}, Converted Z=${fbxZ}`
-						);
-					}
-					prevZ = fbxZ;
+				for (const time of unifiedTimes) {
+					// Interpolate values for each axis at this time
+					const fbxX = this.InterpolateValue(boneData.translation.x, time) / 100;
+					const fbxY = this.InterpolateValue(boneData.translation.y, time) / 100;
+					const fbxZ = this.InterpolateValue(boneData.translation.z, time) / 100;
 
-					// FBX to glTF/VRM coordinate system conversion
-					// Option 1: Just negate Z (most common)
+					// Apply coordinate conversion
 					let x = fbxX;
 					let y = fbxY;
 					let z = fbxZ;
-
-					// Option 2: No conversion needed
-					// let x = fbxX;
-					// let y = fbxY;
-					// let z = fbxZ;
-
-					// Option 3: Swap axes (less common)
-					// let x = fbxX;
-					// let y = fbxZ;
-					// let z = fbxY;
 
 					translations.push(x, y, z);
 				}
@@ -1055,7 +1012,7 @@ class FbxToVrmaConverter {
 					bufferView: vrmaData.bufferViews.length,
 					byteOffset: 0,
 					componentType: 5126,
-					count: times.length,
+					count: unifiedTimes.length,
 					type: "VEC3",
 					min: undefined, // Could calculate bounds if needed
 					max: undefined,
@@ -1300,6 +1257,41 @@ class FbxToVrmaConverter {
 
 		// Write GLB file with .vrma extension
 		fs.writeFileSync(outputPath, glb);
+	}
+	InterpolateValue(curve, time) {
+		if (!curve || !curve.times || !curve.values || curve.times.length === 0) {
+			return 0;
+		}
+		
+		// Find the two keyframes that surround the requested time
+		let i = 0;
+		while (i < curve.times.length && curve.times[i] < time) {
+			i++;
+		}
+		
+		// Exact match
+		if (i < curve.times.length && Math.abs(curve.times[i] - time) < 0.0001) {
+			return curve.values[i];
+		}
+		
+		// Before first keyframe
+		if (i === 0) {
+			return curve.values[0];
+		}
+		
+		// After last keyframe
+		if (i >= curve.times.length) {
+			return curve.values[curve.values.length - 1];
+		}
+		
+		// Linear interpolation between two keyframes
+		const t0 = curve.times[i - 1];
+		const t1 = curve.times[i];
+		const v0 = curve.values[i - 1];
+		const v1 = curve.values[i];
+		
+		const factor = (time - t0) / (t1 - t0);
+		return v0 + (v1 - v0) * factor;
 	}
 
 	GetPreRotation(preRotation, rotationOrder) {
