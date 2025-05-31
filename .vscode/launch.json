@@ -13,6 +13,16 @@
             ],
             "program": "${workspaceFolder}\\server.js",
             "args": "--trace-warnings"
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "convert_fbx_anims",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "program": "utils/convert_fbx_anims.js",
+			"runtimeArgs": []
         }
     ]
 }
