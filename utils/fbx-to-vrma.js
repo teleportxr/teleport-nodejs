@@ -358,7 +358,7 @@ class FbxToVrmaConverter {
 					if (propLine.includes("P:")) {
 						// FBX property format: P: "name", "type", "flags", "flags2", value1, value2, value3
 						const propMatch = propLine.match(
-							/P:\s*"([^"]+)"[^,]*,[^,]*,[^,]*,[^,]*,\s*([-\d.]+)(?:,\s*([-\d.]+))?(?:,\s*([-\d.]+))?/
+							/P:\s*"([^"]+)"[^,]*,[^,]*,[^,]*,[^,]*,\s*([-\d.]+(?:e[-+]?\d+)?)(?:,\s*([-\d.]+(?:e[-+]?\d+)?))?(?:,\s*([-\d.]+(?:e[-+]?\d+)?))?/
 						);
 						if (propMatch) {
 							const propName = propMatch[1];
@@ -802,6 +802,7 @@ class FbxToVrmaConverter {
 		let bufferOffset = 0;
 		let accessorIndex = 0;
 		let samplerIndex = 0;
+		const isLooping = true;
 
 		// Process each bone
 		for (const [vrmBoneName, boneData] of Object.entries(animationData)) {
@@ -825,8 +826,13 @@ class FbxToVrmaConverter {
 				if (boneData.rotation.y) boneData.rotation.y.times.forEach(t => allTimes.add(t));
 				if (boneData.rotation.z) boneData.rotation.z.times.forEach(t => allTimes.add(t));
 				
+
+				//const commonTimes = allTimes.filter(value => (boneData.rotation.x.times.includes(value) && boneData.rotation.y.times.includes(value) && boneData.rotation.z.times.includes(value)));
+				let commonTimes = new Set([...allTimes].filter(x => boneData.rotation.x.times.includes(x)));
+				if(!commonTimes.has(this.animationLength))
+					commonTimes.add(this.animationLength);
 				// Convert to sorted array
-				const unifiedTimes = Array.from(allTimes).sort((a, b) => a - b);
+				const unifiedTimes = Array.from(commonTimes).sort((a, b) => a - b);
 				
 				if (unifiedTimes.length === 0) continue;
 
@@ -864,15 +870,15 @@ class FbxToVrmaConverter {
 				if (vrmBone != null && vrmBone.rotation) {
 					//	preRotation=vrmBone.rotation;
 				}
-
 				// Create rotation values (convert Euler to quaternion)
 				const quaternions = [];
+				const qx = [];
 				for (const time of unifiedTimes) {
 					// Interpolate rotation values at this time
 					const fbxX = this.InterpolateValue(boneData.rotation.x, time) * Math.PI / 180;
 					const fbxY = this.InterpolateValue(boneData.rotation.y, time) * Math.PI / 180;
 					const fbxZ = this.InterpolateValue(boneData.rotation.z, time) * Math.PI / 180;
-
+						
 					let x = fbxX;
 					let y = fbxY;
 					let z = fbxZ;
@@ -888,6 +894,7 @@ class FbxToVrmaConverter {
 						animQuat
 					);
 					quaternions.push(quat[0], quat[1], quat[2], quat[3]);
+				
 				}
 
 				const rotationBuffer = Buffer.from(
@@ -948,9 +955,9 @@ class FbxToVrmaConverter {
 			) {
 				// Get the union of all time values from all three curves
 				const allTimes = new Set();
-				if (boneData.translation.x) boneData.translation.x.times.forEach(t => allTimes.add(t));
-				if (boneData.translation.y) boneData.translation.y.times.forEach(t => allTimes.add(t));
-				if (boneData.translation.z) boneData.translation.z.times.forEach(t => allTimes.add(t));
+				//if (boneData.translation.x) boneData.translation.x.times.forEach(t => allTimes.add(t));
+				//if (boneData.translation.y) boneData.translation.y.times.forEach(t => allTimes.add(t));
+				//if (boneData.translation.z) boneData.translation.z.times.forEach(t => allTimes.add(t));
 				
 				// Convert to sorted array
 				const unifiedTimes = Array.from(allTimes).sort((a, b) => a - b);
@@ -991,9 +998,9 @@ class FbxToVrmaConverter {
 				const translations = [];
 				for (const time of unifiedTimes) {
 					// Interpolate values for each axis at this time
-					const fbxX = this.InterpolateValue(boneData.translation.x, time) / 100;
-					const fbxY = this.InterpolateValue(boneData.translation.y, time) / 100;
-					const fbxZ = this.InterpolateValue(boneData.translation.z, time) / 100;
+					const fbxX = this.InterpolateValue(boneData.translation.x, time, this.animationLength, isLooping) / 100;
+					const fbxY = this.InterpolateValue(boneData.translation.y, time, this.animationLength, isLooping) / 100;
+					const fbxZ = this.InterpolateValue(boneData.translation.z, time, this.animationLength, isLooping) / 100;
 
 					// Apply coordinate conversion
 					let x = fbxX;
@@ -1258,37 +1265,109 @@ class FbxToVrmaConverter {
 		// Write GLB file with .vrma extension
 		fs.writeFileSync(outputPath, glb);
 	}
-	InterpolateValue(curve, time) {
+	EnsureShortestPath(q1, q2) {
+    	// If dot product is negative, negate q2 to ensure shortest path
+    	const dot = q1[0] * q2[0] + q1[1] * q2[1] + q1[2] * q2[2] + q1[3] * q2[3];
+    	if (dot < 0) {
+        	return [-q2[0], -q2[1], -q2[2], -q2[3]];
+	    }
+	    return q2;
+	}
+	SlerpQuaternions(q1, q2, t) {
+		// Spherical linear interpolation
+		let dot = q1[0] * q2[0] + q1[1] * q2[1] + q1[2] * q2[2] + q1[3] * q2[3];
+		
+		// Clamp dot product
+		dot = Math.max(-1, Math.min(1, dot));
+		
+		// If quaternions are very close, use linear interpolation
+		if (dot > 0.9995) {
+			return [
+				q1[0] + t * (q2[0] - q1[0]),
+				q1[1] + t * (q2[1] - q1[1]),
+				q1[2] + t * (q2[2] - q1[2]),
+				q1[3] + t * (q2[3] - q1[3])
+			];
+		}
+		
+		// Calculate angle between quaternions
+		const theta = Math.acos(dot);
+		const sinTheta = Math.sin(theta);
+		
+		const w1 = Math.sin((1 - t) * theta) / sinTheta;
+		const w2 = Math.sin(t * theta) / sinTheta;
+		
+		return [
+			w1 * q1[0] + w2 * q2[0],
+			w1 * q1[1] + w2 * q2[1],
+			w1 * q1[2] + w2[2],
+			w1 * q1[3] + w2 * q2[3]
+		];
+	}
+	InterpolateValue(curve, time, animationLength = 0, isLooping = false) {
 		if (!curve || !curve.times || !curve.values || curve.times.length === 0) {
 			return 0;
 		}
 		
+		const times = curve.times;
+		const values = curve.values;
+		const numKeys = times.length;
+		
 		// Find the two keyframes that surround the requested time
 		let i = 0;
-		while (i < curve.times.length && curve.times[i] < time) {
+		while (i < numKeys && times[i] < time) {
 			i++;
 		}
 		
 		// Exact match
-		if (i < curve.times.length && Math.abs(curve.times[i] - time) < 0.0001) {
-			return curve.values[i];
+		if (i < numKeys && Math.abs(times[i] - time) < 0.00001) {
+			return values[i];
 		}
-		
+		// don't loop if last time == animationLength.
+		if(Math.abs(times[numKeys - 1] - animationLength) <  0.00001)
+		{
+			isLooping = false;
+		}
 		// Before first keyframe
 		if (i === 0) {
-			return curve.values[0];
+			if (isLooping) {
+				// For seamless loop, interpolate from last to first
+				// Use the curve's last time, but offset by the full animation length
+				const t0 = times[numKeys - 1] - animationLength;
+				const t1 = times[0];
+				const v0 = values[numKeys - 1];
+				const v1 = values[0];
+				
+				const factor = (time - t0) / (t1 - t0);
+				return v0 + (v1 - v0) * factor;
+			}
+			return values[0];
 		}
 		
-		// After last keyframe
-		if (i >= curve.times.length) {
-			return curve.values[curve.values.length - 1];
+		// After last keyframe of this curve
+		if (i >= numKeys) {
+			// If we're past this curve's last keyframe but within animation length
+			if (isLooping) {
+				// Always interpolate from last keyframe to first keyframe at animation end
+				const t0 = times[numKeys - 1];
+				const t1 = animationLength + times[0];
+				const v0 = values[numKeys - 1];
+				const v1 = values[0];
+				
+				if (t1 > t0) {
+					const factor = (time - t0) / (t1 - t0);
+					return v0 + (v1 - v0) * factor;
+				}
+			}
+			// Otherwise, hold the last value
+			return values[numKeys - 1];
 		}
 		
 		// Linear interpolation between two keyframes
-		const t0 = curve.times[i - 1];
-		const t1 = curve.times[i];
-		const v0 = curve.values[i - 1];
-		const v1 = curve.values[i];
+		const t0 = times[i - 1];
+		const t1 = times[i];
+		const v0 = values[i - 1];
+		const v1 = values[i];
 		
 		const factor = (time - t0) / (t1 - t0);
 		return v0 + (v1 - v0) * factor;
