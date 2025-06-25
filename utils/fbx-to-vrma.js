@@ -570,17 +570,17 @@ class FbxToVrmaConverter {
 
 	ParseFbxFloatArray(line) {
 		// Check if the line format is correct
-		console.log('Parsing float array from line:', line.substring(0, 100) + '...');
+		//console.log('Parsing float array from line:', line.substring(0, 100) + '...');
 		
 		const cleanLine = line.replace(/^\s*a:\s*/, '');
 		const values = cleanLine.split(',').map(v => parseFloat(v.trim())).filter(v => !isNaN(v));
 		
 		// Debug: Check for unexpected values
-		for (let i = 1; i < values.length; i++) {
-			if (Math.abs(values[i] - values[i-1]) > 100) { // Large jump
-				console.warn(`Large value jump detected: ${values[i-1]} -> ${values[i]} at index ${i}`);
-			}
-		}
+		//for (let i = 1; i < values.length; i++) {
+		//	if (Math.abs(values[i] - values[i-1]) > 100) { // Large jump
+		//		console.warn(`Large value jump detected: ${values[i-1]} -> ${values[i]} at index ${i}`);
+		//	}
+		//}
 		
 		return values;
 	}
@@ -702,28 +702,29 @@ class FbxToVrmaConverter {
 
 				// Assign curves to axes based on connection order (X, Y, Z)
 				if (curves.length >= 3) {
+					console.log(`${vrmBoneName} ${property}: ${curves[0].values.length} values`);
 					if (property === "rotation") {
 						animationData[vrmBoneName].rotation.x = curves[0];
 						animationData[vrmBoneName].rotation.y = curves[1];
 						animationData[vrmBoneName].rotation.z = curves[2];
-						console.log(
-							`Assigned rotation curves to ${vrmBoneName} (${model.name}) with order ${animationData[vrmBoneName].rotationOrder}`
-						);
+						//console.log(
+						//	`Assigned rotation curves to ${vrmBoneName} (${model.name}) with order ${animationData[vrmBoneName].rotationOrder}`
+						//);
 					} else if (property === "translation") {
 						animationData[vrmBoneName].translation.x = curves[0];
 						animationData[vrmBoneName].translation.y = curves[1];
 						animationData[vrmBoneName].translation.z = curves[2];
-						console.log(
-							`Assigned translation curves to ${vrmBoneName} (${model.name})`
-						);
+						//console.log(
+						//	`Assigned translation curves to ${vrmBoneName} (${model.name})`
+						//);
 						// Debug: Check if curves have the same length
-						if (vrmBoneName === 'hips') {
-							console.log(`Hips translation curves assigned:`);
-							console.log(`  X: ${curves[0].values.length} values`);
-							console.log(`  Y: ${curves[1].values.length} values`);
-							console.log(`  Z: ${curves[2].values.length} values`);
-							console.log(`  First few Z values:`, curves[2].values.slice(0, 10));
-						}
+						//if (vrmBoneName === 'hips') {
+						//	console.log(`Hips translation curves assigned:`);
+						//	console.log(`  X: ${curves[0].values.length} values`);
+						//	console.log(`  Y: ${curves[1].values.length} values`);
+						//	console.log(`  Z: ${curves[2].values.length} values`);
+						//	console.log(`  First few Z values:`, curves[2].values.slice(0, 10));
+						//}
 					}
 				} else if (curves.length > 0) {
 					console.warn(
@@ -806,7 +807,7 @@ class FbxToVrmaConverter {
 
 		// Process each bone
 		for (const [vrmBoneName, boneData] of Object.entries(animationData)) {
-			console.log(`Add bone: ${vrmBoneName}`);
+			//console.log(`Add bone: ${vrmBoneName}`);
 			const humanBone = {};
 
 			// Initialize animation data for this bone

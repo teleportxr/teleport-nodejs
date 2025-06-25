@@ -1,2 +1,2 @@
-.\gltf2ozz.exe --file="E:\Code\Teleport\teleport-nodejs\assets\vrma\Walking2.vrma"
+.\gltf2ozz.exe --file="E:\Code\Teleport\teleport-nodejs\assets\vrma\Walking.vrma"
 .\sample_playback.exe
