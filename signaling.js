@@ -54,7 +54,7 @@ var newClient=null;
 var disconnectClient=null;
 function startStreaming(signalingClient) {
     signalingClient.ChangeSignalingState(SignalingState.ACCEPTED);
-	// And we send the WebSockets request-response.
+	// And we send the WebSockets connect-response.
 	sendResponseToClient(signalingClient.clientID);
 	newClient(signalingClient.clientID,signalingClient);
 }
@@ -66,7 +66,7 @@ function sendResponseToClient(clientID) {
         var signalingClient=signalingClients.get(clientID);
 		// First, we send the WebSockets signaling response.
 		var txt =
-			'{"teleport-signal-type":"request-response",'
+			'{"teleport-signal-type":"connect-response",'
 			+`"content":{"clientID": ${signalingClient.clientID},`
 			+`"serverID": ${serverID}}}`;
 		signalingClient.ws.send(txt);
@@ -153,7 +153,7 @@ function receiveWebSocketsMessage(clientID, signalingClient, txt) {
 	if (!message.hasOwnProperty("teleport-signal-type"))
         return;
     var teleport_signal_type=message["teleport-signal-type"];
-	if (teleport_signal_type == "request")
+	if (teleport_signal_type == "connect")
     {
 		processInitialRequest(clientID, signalingClient, message["content"]);
     }
