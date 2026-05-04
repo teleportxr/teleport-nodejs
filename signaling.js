@@ -52,6 +52,7 @@ var desiredIP = "";
 var webRtcConnectionManager = null;
 var newClient=null;
 var disconnectClient=null;
+var clientHostHeader = ""; // Store the first client's host header for resource URLs
 function startStreaming(signalingClient) {
     signalingClient.ChangeSignalingState(SignalingState.ACCEPTED);
 	// And we send the WebSockets connect-response.
@@ -183,6 +184,17 @@ function OnWebSocket(ws, req) {
 			" connected from " +
 			signalingClient.ip_addr_port.toString()
 	);
+
+	// Capture the Host header from the first client connection for resource URLs
+	// This allows us to auto-detect the server's public address
+	if (!clientHostHeader && req.headers) {
+		// Try to get the host from headers, preferring X-Forwarded-Host (for reverse proxies)
+		clientHostHeader = req.headers['x-forwarded-host'] || req.headers['host'] || '';
+		if (clientHostHeader) {
+			console.log("Auto-detected resource server host from client connection: " + clientHostHeader);
+		}
+	}
+
 	//When the server runs behind a proxy like NGINX, the de-facto standard is to use the X-Forwarded-For header.
 	//const ip = .headers['x-forwarded-for'].split(',')[0].trim();
 
@@ -273,3 +285,8 @@ exports.sendConfigMessage = function (clientID, msg) {
 };
 
 exports.signalingClients = signalingClients;
+
+// Export function to retrieve the auto-detected client host header for resource URLs
+exports.getClientHostHeader = function () {
+	return clientHostHeader;
+};
