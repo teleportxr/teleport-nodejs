@@ -142,6 +142,22 @@ class Client {
 				this.clientDynamicLighting.uid_specular_cubemap_texture_uid=resources.AddTexture(this.scene.specularCubemapPath);
 			}
 		}
+
+		// Log the setup command for debugging
+		console.log("\n===== NODE SERVER SENDING SETUPCOMMAND =====");
+		console.log(JSON.stringify({
+			type: "SetupCommand",
+			clientID: this.clientID,
+			backgroundMode: this.setupCommand.BackgroundMode_backgroundMode,
+			backgroundTexture: this.setupCommand.uid_backgroundTexture,
+			drawDistance: this.setupCommand.float32_draw_distance,
+			clientDynamicLighting: {
+				diffuse_cubemap_texture_uid: this.clientDynamicLighting.uid_diffuse_cubemap_texture_uid,
+				specular_cubemap_texture_uid: this.clientDynamicLighting.uid_specular_cubemap_texture_uid
+			}
+		}, null, 2));
+		console.log("===== END SETUPCOMMAND =====\n");
+
         this.SendCommand(this.setupCommand);
     }
     SendCommand(command){
