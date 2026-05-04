@@ -21,10 +21,12 @@ function generateRandomBigInt() {
 
 const serverID = generateRandomBigInt();
 
-function initServer(signaling_port) {
+function initServer(signaling_port, options) {
 	var cm=client_manager.getInstance();
 	const webRtcConnectionManager = WebRtcConnectionManager.getInstance();
 	webRtcConnectionManager.SetSendConfigMessage(signaling.sendConfigMessage);
+	if (options && Array.isArray(options.iceServers))
+		webRtcConnectionManager.SetIceServers(options.iceServers);
 	return signaling.init(serverID, webRtcConnectionManager,cm.newClient.bind(cm),cm.disconnectClient.bind(cm),signaling_port);
   }
   

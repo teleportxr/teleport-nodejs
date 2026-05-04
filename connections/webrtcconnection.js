@@ -18,15 +18,12 @@ class WebRtcConnection extends EventEmitter
 	constructor(id, options = {})
 	{
 		super();
-		const iceServers=[
-			"stun:stun.l.google.com:19302"
-			];
-		this.iceServers = [] ;
-		for(const s in iceServers)
-		{
-			this.iceServers.push({ 'urls': iceServers[s] });
-		}
-		//this.iceServers=[{'urls': 'stun:stun.l.google.com:19302'}];
+		const defaultIceServers = [
+			{ urls: "stun:stun.l.google.com:19302" }
+		];
+		this.iceServers = (options && Array.isArray(options.iceServers) && options.iceServers.length)
+			? options.iceServers
+			: defaultIceServers;
 		this.id = id;
 		this.state = 'open';
 
@@ -40,16 +37,18 @@ class WebRtcConnection extends EventEmitter
 			...options
 		};
 
-		const {
-			RTCPeerConnection,
-			timeToConnected,
-			timeToReconnected
-		} = options;
-
 		this.messageReceivedReliableCb		=options.messageReceivedReliable;
 		this.messageReceivedUnreliableCb	=options.messageReceivedUnreliable;
 		this.connectionStateChangedCb=options.connectionStateChanged;
 		this.sendConfigMessage		=options.sendConfigMessage;
+
+		this._onIceConnectionStateChange = this.onIceConnectionStateChange.bind(this);
+		this._onIceGatheringStateChange  = this.onIceGatheringStateChange.bind(this);
+		this._onConnectionStateChange    = this.connectionStateChanged.bind(this);
+		this._onIceCandidateError = (event) =>
+		{
+			console.log("ICE candidate error: "+event.errorCode+" "+event.errorText+" "+event.port+" "+event.url);
+		};
 
 
 		Object.defineProperties(this, {
@@ -102,14 +101,10 @@ class WebRtcConnection extends EventEmitter
 
 		this.reconnectionTimer = null;
 
-		this.peerConnection.addEventListener('iceconnectionstatechange', this.onIceConnectionStateChange.bind(this));
-		this.peerConnection.addEventListener('icegatheringstatechange', this.onIceGatheringStateChange.bind(this));
-		this.peerConnection.addEventListener("icecandidateerror", (event) => {
-
-            console.log("ICE candidate error: "+event.errorCode+" "+event.errorText+" "+event.port+" "+event.url);
-		});
-        
-        this.peerConnection.addEventListener("connectionstatechange", this.connectionStateChanged.bind(this));
+		this.peerConnection.addEventListener('iceconnectionstatechange', this._onIceConnectionStateChange);
+		this.peerConnection.addEventListener('icegatheringstatechange', this._onIceGatheringStateChange);
+		this.peerConnection.addEventListener("icecandidateerror", this._onIceCandidateError);
+		this.peerConnection.addEventListener("connectionstatechange", this._onConnectionStateChange);
 
         this.onIceCandidate= ({ candidate })=>
         {
@@ -144,11 +139,11 @@ class WebRtcConnection extends EventEmitter
         
             this.timeout = options.setTimeout(() =>
             {
-                peerConnection.removeEventListener('icecandidate', this.onIceCandidate.bind(this));
+                peerConnection.removeEventListener('icecandidate', this.onIceCandidate);
                 this.deferred.reject(new Error('Timed out waiting for host candidates'));
             }, timeToHostCandidates);
-        
-            peerConnection.addEventListener('icecandidate', this.onIceCandidate.bind(this));
+
+            peerConnection.addEventListener('icecandidate', this.onIceCandidate);
         
             await this.deferred.promise;
         }
@@ -256,13 +251,14 @@ class WebRtcConnection extends EventEmitter
 		console.log("WebRtcConnection.close()");
 		if(this.peerConnection)
 		{
-			this.peerConnection.removeEventListener('iceconnectionstatechange', this.onIceConnectionStateChange.bind(this));
-
-			this.peerConnection.eve
-			this.peerConnection.removeEventListener('iceconnectionstatechange', this.onIceConnectionStateChange.bind(this));
-			this.peerConnection.removeEventListener('icegatheringstatechange', this.onIceGatheringStateChange.bind(this));
-		//this.peerConnection.removeEventListener("icecandidateerror", (event) => {
-			this.peerConnection.removeEventListener("connectionstatechange", this.connectionStateChanged.bind(this));
+			this.peerConnection.removeEventListener('iceconnectionstatechange', this._onIceConnectionStateChange);
+			this.peerConnection.removeEventListener('icegatheringstatechange', this._onIceGatheringStateChange);
+			this.peerConnection.removeEventListener("icecandidateerror", this._onIceCandidateError);
+			this.peerConnection.removeEventListener("connectionstatechange", this._onConnectionStateChange);
+			if (this.onIceCandidate)
+			{
+				this.peerConnection.removeEventListener('icecandidate', this.onIceCandidate);
+			}
 		}
 		if (this.connectionTimer)
 		{

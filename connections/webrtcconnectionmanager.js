@@ -39,9 +39,16 @@ class WebRtcConnectionManager
 
 	createConnection(clientID,connectionStateChangedCb,messageReceivedReliableCb,messageReceivedUnreliableCb)
 	{
+		const existing = this.connections.get(clientID);
+		if (existing)
+		{
+			console.log("createConnection: replacing existing connection for "+clientID);
+			existing.close();
+			this.connections.delete(clientID);
+		}
 		var options=this.options;
 		options.sendConfigMessage	=this.sendConfigMessage;
-        
+
 		options.messageReceivedReliable		=messageReceivedReliableCb;
 		options.messageReceivedUnreliable	=messageReceivedUnreliableCb;
 		options.connectionStateChanged		=connectionStateChangedCb;
@@ -72,6 +79,11 @@ class WebRtcConnectionManager
 	SetSendConfigMessage(cfm)
 	{
 		this.sendConfigMessage=cfm;
+	}
+	SetIceServers(iceServers)
+	{
+		if (Array.isArray(iceServers))
+			this.options.iceServers=iceServers;
 	}
 }
 
