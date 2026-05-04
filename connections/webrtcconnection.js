@@ -21,9 +21,22 @@ class WebRtcConnection extends EventEmitter
 		const defaultIceServers = [
 			{ urls: "stun:stun.l.google.com:19302" }
 		];
-		this.iceServers = (options && Array.isArray(options.iceServers) && options.iceServers.length)
+		const requestedIceServers = (options && Array.isArray(options.iceServers) && options.iceServers.length)
 			? options.iceServers
 			: defaultIceServers;
+		// @roamhq/wrtc rejects the entire iceServers array if any TURN entry lacks
+		// credentials, and TURN can't function without auth, so drop those with a warning.
+		this.iceServers = requestedIceServers.filter((s) =>
+		{
+			const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
+			const isTurn = urls.some((u) => u && (u.startsWith('turn:') || u.startsWith('turns:')));
+			if (isTurn && (!s.username || !s.credential))
+			{
+				console.warn("WebRtcConnection: skipping TURN entry without credentials: "+JSON.stringify(s));
+				return false;
+			}
+			return true;
+		});
 		this.iceTransportPolicy = (options && (options.iceTransportPolicy === 'all' || options.iceTransportPolicy === 'relay'))
 			? options.iceTransportPolicy
 			: 'all';
