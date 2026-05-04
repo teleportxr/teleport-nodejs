@@ -145,19 +145,12 @@ class Client {
 
 		// Log the setup command for debugging
 		console.log("\n===== NODE SERVER SENDING SETUPCOMMAND =====");
-		console.log(JSON.stringify({
-			type: "SetupCommand",
-			clientID: this.clientID.toString(),
-			session_id: this.setupCommand.uint64_session_id.toString(),
-			backgroundMode: this.setupCommand.BackgroundMode_backgroundMode,
-			backgroundTexture: this.setupCommand.uid_backgroundTexture.toString(),
-			drawDistance: this.setupCommand.float32_draw_distance,
-			startTimestamp_utc_unix_us: this.setupCommand.int64_startTimestamp_utc_unix_us.toString(),
-			clientDynamicLighting: {
-				diffuse_cubemap_texture_uid: this.clientDynamicLighting.uid_diffuse_cubemap_texture_uid.toString(),
-				specular_cubemap_texture_uid: this.clientDynamicLighting.uid_specular_cubemap_texture_uid.toString()
+		console.log(JSON.stringify(this.setupCommand, (key, value) => {
+			if (typeof value === 'bigint') {
+				return value.toString();
 			}
-		}, null, 2));
+			return value;
+		}, 2));
 		console.log("===== END SETUPCOMMAND =====\n");
 
         this.SendCommand(this.setupCommand);
