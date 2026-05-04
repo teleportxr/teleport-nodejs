@@ -189,9 +189,19 @@ function OnWebSocket(ws, req) {
 	// This allows us to auto-detect the server's public address
 	if (!clientHostHeader && req.headers) {
 		// Try to get the host from headers, preferring X-Forwarded-Host (for reverse proxies)
-		clientHostHeader = req.headers['x-forwarded-host'] || req.headers['host'] || '';
+		const xForwardedHost = req.headers['x-forwarded-host'];
+		const hostHeader = req.headers['host'];
+		clientHostHeader = xForwardedHost || hostHeader || '';
 		if (clientHostHeader) {
 			console.log("Auto-detected resource server host from client connection: " + clientHostHeader);
+			if (xForwardedHost) {
+				console.log("  (from X-Forwarded-Host: " + xForwardedHost + ")");
+			} else if (hostHeader) {
+				console.log("  (from Host: " + hostHeader + ")");
+			}
+		} else {
+			console.log("WARNING: Could not auto-detect host from request headers");
+			console.log("  Available headers: " + JSON.stringify(req.headers));
 		}
 	}
 
