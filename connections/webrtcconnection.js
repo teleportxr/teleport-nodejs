@@ -24,6 +24,9 @@ class WebRtcConnection extends EventEmitter
 		this.iceServers = (options && Array.isArray(options.iceServers) && options.iceServers.length)
 			? options.iceServers
 			: defaultIceServers;
+		this.iceTransportPolicy = (options && (options.iceTransportPolicy === 'all' || options.iceTransportPolicy === 'relay'))
+			? options.iceTransportPolicy
+			: 'all';
 		this.id = id;
 		this.state = 'open';
 
@@ -87,7 +90,7 @@ class WebRtcConnection extends EventEmitter
 	}
 	reconnect()
 	{
-		this.peerConnection		=new DefaultRTCPeerConnection({ sdpSemantics: 'unified-plan', 'iceServers': this.iceServers});
+		this.peerConnection		=new DefaultRTCPeerConnection({ sdpSemantics: 'unified-plan', iceServers: this.iceServers, iceTransportPolicy: this.iceTransportPolicy});
 		this.beforeOffer();
 		this.connectionTimer = this.options.setTimeout(() =>
 		{

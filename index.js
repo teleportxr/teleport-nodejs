@@ -27,6 +27,8 @@ function initServer(signaling_port, options) {
 	webRtcConnectionManager.SetSendConfigMessage(signaling.sendConfigMessage);
 	if (options && Array.isArray(options.iceServers))
 		webRtcConnectionManager.SetIceServers(options.iceServers);
+	if (options && options.iceTransportPolicy)
+		webRtcConnectionManager.SetIceTransportPolicy(options.iceTransportPolicy);
 	return signaling.init(serverID, webRtcConnectionManager,cm.newClient.bind(cm),cm.disconnectClient.bind(cm),signaling_port);
   }
   

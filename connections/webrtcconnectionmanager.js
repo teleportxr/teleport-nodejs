@@ -85,6 +85,11 @@ class WebRtcConnectionManager
 		if (Array.isArray(iceServers))
 			this.options.iceServers=iceServers;
 	}
+	SetIceTransportPolicy(policy)
+	{
+		if (policy === 'all' || policy === 'relay')
+			this.options.iceTransportPolicy=policy;
+	}
 }
 
 WebRtcConnectionManager.create = function create (options)
