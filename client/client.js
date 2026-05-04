@@ -157,6 +157,7 @@ class Client {
     }
     SendCommand(command){
         let array=core.encodeToUint8Array(command);
+        console.log("SendCommand: encoded to", array.length, "bytes, expected", command.size(), "bytes");
         this.signalingSend(array);
     }
     // We call StartStreaming once the SetupCommand has been acknowledged.

@@ -55,6 +55,7 @@ function SizeOfType(member) {
 }
 
 function encodeIntoDataView(obj, dataView, byteOffset) {
+	const startOffset = byteOffset;
 	for (let [key, value] of Object.entries(obj)) {
 		let first_underscore = key.search('_');
 		var name = key.substring(first_underscore + 1, key.end);
@@ -87,10 +88,11 @@ function encodeIntoDataView(obj, dataView, byteOffset) {
 		if (sz == 0 || sz == NaN) {
 			throw new Error("Can't find size of " + key + " in " + obj.toString());
 		}
+		console.log("Offset " + byteOffset + ": " + sz + " bytes\t" + tp + " " + name + " = " + value.toString().substring(0, 20));
 		byteOffset += sz;
-		console.log(byteOffset + ": " + sz + " bytes\t\t" + tp + " " + name + " " + value.toString());
 	}
-	console.log("Total size: " + byteOffset + "\n");
+	const totalSize = byteOffset - startOffset;
+	console.log("ENCODED TOTAL: " + totalSize + " bytes (offsets " + startOffset + " to " + byteOffset + ")\n");
 	return byteOffset;
 }
 
