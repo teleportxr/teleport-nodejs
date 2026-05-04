@@ -147,7 +147,7 @@ class Client {
 		console.log("\n===== NODE SERVER SENDING SETUPCOMMAND =====");
 		console.log(JSON.stringify({
 			type: "SetupCommand",
-			clientID: this.clientID,
+			clientID: this.clientID.toString(),
 			session_id: this.setupCommand.uint64_session_id.toString(),
 			backgroundMode: this.setupCommand.BackgroundMode_backgroundMode,
 			backgroundTexture: this.setupCommand.uid_backgroundTexture.toString(),
