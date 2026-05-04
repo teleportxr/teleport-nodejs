@@ -113,9 +113,8 @@ class WebRtcConnection extends EventEmitter
         {
             if (!candidate)
             {
-                this.options.clearTimeout(this.timeout);
-                //this.peerConnection.removeEventListener('icecandidate', this.onIceCandidate);
-                this.deferred.resolve();
+                if (this.iceGatheringSettle)
+                    this.iceGatheringSettle();
                 return;
             }
             // send the candidate
@@ -130,24 +129,42 @@ class WebRtcConnection extends EventEmitter
             {
                 return;
             }
-        
+
             const { timeToHostCandidates } = options;
-        
+
             this.deferred = {};
             this.deferred.promise = new Promise((resolve, reject) =>
             {
                 this.deferred.resolve = resolve;
                 this.deferred.reject = reject;
             });
-        
-            this.timeout = options.setTimeout(() =>
-            {
-                peerConnection.removeEventListener('icecandidate', this.onIceCandidate);
-                this.deferred.reject(new Error('Timed out waiting for host candidates'));
-            }, timeToHostCandidates);
 
+            const onGatheringStateChange = () =>
+            {
+                if (peerConnection.iceGatheringState === 'complete')
+                    this.iceGatheringSettle();
+            };
+
+            let settled = false;
+            this.iceGatheringSettle = () =>
+            {
+                if (settled) return;
+                settled = true;
+                this.options.clearTimeout(this.timeout);
+                peerConnection.removeEventListener('icegatheringstatechange', onGatheringStateChange);
+                this.deferred.resolve();
+            };
+
+            // Trickle ICE is in use; the offer and any already-gathered candidates
+            // have been sent. If gathering is slow (e.g. a TURN allocation is
+            // timing out), resolve rather than reject so doOffer does not tear
+            // down the connection. Remaining candidates will still be sent by
+            // the persistent 'icecandidate' listener.
+            this.timeout = options.setTimeout(() => this.iceGatheringSettle(), timeToHostCandidates);
+
+            peerConnection.addEventListener('icegatheringstatechange', onGatheringStateChange);
             peerConnection.addEventListener('icecandidate', this.onIceCandidate);
-        
+
             await this.deferred.promise;
         }
         

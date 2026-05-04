@@ -221,7 +221,7 @@ class Client {
 	}
 	ProcessNodePoses(headPose,numPoses,nodePoses)
 	{
-		console.log("Client: ProcessNodePoses ", numPoses, " poses.");
+		//console.log("Client: ProcessNodePoses ", numPoses, " poses.");
 	}
 	UpdateStreaming()
 	{

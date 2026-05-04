@@ -1,7 +1,7 @@
 {
   "dependencies": {
     "@lightningjs/msdf-generator": "^1.1.1",
-    "@roamhq/wrtc": "^0.8.0",
+    "@roamhq/wrtc": "^0.10.0",
     "bitset": "^5.2.3",
     "get-current-line": "^7.4.0",
     "microtime": "^3.1.1",
