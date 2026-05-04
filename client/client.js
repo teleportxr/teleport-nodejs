@@ -148,9 +148,11 @@ class Client {
 		console.log(JSON.stringify({
 			type: "SetupCommand",
 			clientID: this.clientID,
+			session_id: this.setupCommand.uint64_session_id.toString(),
 			backgroundMode: this.setupCommand.BackgroundMode_backgroundMode,
 			backgroundTexture: this.setupCommand.uid_backgroundTexture.toString(),
 			drawDistance: this.setupCommand.float32_draw_distance,
+			startTimestamp_utc_unix_us: this.setupCommand.int64_startTimestamp_utc_unix_us.toString(),
 			clientDynamicLighting: {
 				diffuse_cubemap_texture_uid: this.clientDynamicLighting.uid_diffuse_cubemap_texture_uid.toString(),
 				specular_cubemap_texture_uid: this.clientDynamicLighting.uid_specular_cubemap_texture_uid.toString()
