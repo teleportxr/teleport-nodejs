@@ -214,13 +214,13 @@ function OnWebSocket(ws, req) {
 		console.error("Websocket err " + error);
 	});
 	// handling what to do when clients disconnects from server
-	ws.on("close", () => {
-		console.log("the client has connected");
+	ws.on("close", (code, reason) => {
+		const reasonStr = (reason && reason.length) ? reason.toString() : "";
+		console.log(
+			"client " + signalingClient.clientID +
+			" disconnected (code=" + code + (reasonStr ? ", reason=" + reasonStr : "") + ")"
+		);
 	});
-	// handling client connection error
-	ws.onerror = function () {
-		console.log("Some Error occurred");
-	};
 }
 exports.init = function (server_id, webRtcCM, newClientFn, disconnectClientFn, signaling_port) {
 	serverID = server_id;
