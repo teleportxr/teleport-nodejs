@@ -149,11 +149,11 @@ class Client {
 			type: "SetupCommand",
 			clientID: this.clientID,
 			backgroundMode: this.setupCommand.BackgroundMode_backgroundMode,
-			backgroundTexture: this.setupCommand.uid_backgroundTexture,
+			backgroundTexture: this.setupCommand.uid_backgroundTexture.toString(),
 			drawDistance: this.setupCommand.float32_draw_distance,
 			clientDynamicLighting: {
-				diffuse_cubemap_texture_uid: this.clientDynamicLighting.uid_diffuse_cubemap_texture_uid,
-				specular_cubemap_texture_uid: this.clientDynamicLighting.uid_specular_cubemap_texture_uid
+				diffuse_cubemap_texture_uid: this.clientDynamicLighting.uid_diffuse_cubemap_texture_uid.toString(),
+				specular_cubemap_texture_uid: this.clientDynamicLighting.uid_specular_cubemap_texture_uid.toString()
 			}
 		}, null, 2));
 		console.log("===== END SETUPCOMMAND =====\n");
