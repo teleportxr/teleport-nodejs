@@ -125,6 +125,10 @@ class Client {
     {
         this.setupCommand=new command.SetupCommand();
         this.clientDynamicLighting=new core.ClientDynamicLighting();
+		// Session is (re)starting; the client has zero state, so retract any
+		// outstanding ack tracking from a previous session and force a resend.
+		this.currentOriginState   = new OriginState();
+		this.currentLightingState = new LightingState();
 		this.setupCommand.float32_draw_distance=10.0;
 		if(this.scene)
 		{
@@ -348,7 +352,25 @@ class Client {
 		var setl					=new command.SetLightingCommand();
 		setl.uint64_ackId			=this.next_ack_id++;
 		setl.ClientDynamicLighting_clientDynamicLighting = this.clientDynamicLighting;
-		
+
+		// Log in declaration order matching ClientDynamicLighting / SetLightingCommand structs.
+		const cdl = setl.ClientDynamicLighting_clientDynamicLighting;
+		console.log("\n===== NODE SERVER SENDING SETLIGHTINGCOMMAND =====");
+		console.log(JSON.stringify({
+			ack_id: setl.uint64_ackId.toString(),
+			specularPos:                  cdl.int2_specularPos,
+			specularCubemapSize:          cdl.int32_specularCubemapSize,
+			specularMips:                 cdl.int32_specularMips,
+			diffusePos:                   cdl.int2_diffusePos,
+			diffuseCubemapSize:           cdl.int32_diffuseCubemapSize,
+			lightPos:                     cdl.int2_lightPos,
+			lightCubemapSize:             cdl.int32_lightCubemapSize,
+			specular_cubemap_texture_uid: cdl.uid_specular_cubemap_texture_uid.toString(),
+			diffuse_cubemap_texture_uid:  cdl.uid_diffuse_cubemap_texture_uid.toString(),
+			lightingMode:                 cdl.LightingMode_lightingMode,
+		}, null, 2));
+		console.log("===== END SETLIGHTINGCOMMAND =====\n");
+
 		// This is now the valid origin.
 		this.currentLightingState.ackId=setl.uint64_ackId;
 		this.currentLightingState.acknowledged=false;
