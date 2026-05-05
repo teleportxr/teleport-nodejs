@@ -103,6 +103,21 @@ class WebRtcConnection extends EventEmitter
 	}
 	reconnect()
 	{
+		// Close and clean up the previous PeerConnection before creating a new one.
+		// Failing to do so leaves the old ICE agent (and its UDP socket) alive, which
+		// causes it to keep sending/receiving STUN messages with stale credentials and
+		// confuses the peer's new ICE agent (ufrag mismatch).
+		if (this.peerConnection)
+		{
+			this.peerConnection.removeEventListener('iceconnectionstatechange', this._onIceConnectionStateChange);
+			this.peerConnection.removeEventListener('icegatheringstatechange', this._onIceGatheringStateChange);
+			this.peerConnection.removeEventListener("icecandidateerror", this._onIceCandidateError);
+			this.peerConnection.removeEventListener("connectionstatechange", this._onConnectionStateChange);
+			if (this.onIceCandidate)
+				this.peerConnection.removeEventListener('icecandidate', this.onIceCandidate);
+			try { this.peerConnection.close(); } catch (e) {}
+			this.peerConnection = null;
+		}
 		this.peerConnection		=new DefaultRTCPeerConnection({ sdpSemantics: 'unified-plan', iceServers: this.iceServers, iceTransportPolicy: this.iceTransportPolicy});
 		this.beforeOffer();
 		this.connectionTimer = this.options.setTimeout(() =>
@@ -267,8 +282,9 @@ class WebRtcConnection extends EventEmitter
 		} else if (this.peerConnection.iceConnectionState === 'disconnected'
 			|| this.peerConnection.iceConnectionState === 'failed')
 		{
-			this.peerConnection.restartIce();
-			console.log("restartIce()");
+			// Do not call restartIce() here: reconnect() below creates a brand-new
+			// PeerConnection, so any ICE restart on the old PC is immediately
+			// abandoned and produces a third set of dangling ICE credentials.
 			if (!this.connectionTimer && !this.reconnectionTimer)
 			{
 				const self = this;
@@ -312,21 +328,13 @@ class WebRtcConnection extends EventEmitter
 			this.reconnectionTimer = null;
 		}
 
-		// Check the connection state
-		if(this.peerConnection)
-		if (this.peerConnection.connectionState == "connected" ||
-			this.peerConnection.connectionState == "failed")
+		// Always close the PeerConnection regardless of connectionState.
+		// Previously it was only closed when state was "connected" or "failed",
+		// which left the ICE agent alive (and its socket bound) when state was
+		// "disconnected", causing stale STUN traffic toward the peer on reconnect.
+		if (this.peerConnection)
 		{
-			// Close each track
-		/*	this.peerConnection.cl.forEach(mediaStream => { {
-						mediaStream.videoTracks.forEach( it => {it.setEnabled(false); });
-						mediaStream.audioTracks.forEach( it => {it.setEnabled(false); });
-
-					};
-				});;6'7*/
-
-			// Close the connection
-			this.peerConnection.close();
+			try { this.peerConnection.close(); } catch (e) {}
 		}
 
 		// Nullify the reference
