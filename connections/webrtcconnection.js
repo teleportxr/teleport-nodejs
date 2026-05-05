@@ -183,15 +183,23 @@ class WebRtcConnection extends EventEmitter
         
 		this.doOffer = async () =>
 		{
+			// Capture the peerConnection at entry; if it gets swapped (reconnect)
+			// or nulled (close) during an await, abort silently rather than
+			// throwing on a stale reference and double-closing.
+			const pc = this.peerConnection;
 			try
-			{ 
-				const offer = await this.peerConnection.createOffer();
-				await this.peerConnection.setLocalDescription(offer);
+			{
+				const offer = await pc.createOffer();
+				if (this.peerConnection !== pc) return;
+				await pc.setLocalDescription(offer);
+				if (this.peerConnection !== pc) return;
 				var message = '{"teleport-signal-type":"offer","sdp":"'+offer.sdp+'"}'; //
 				this.sendConfigMessage(this.id,message);
-				await this.waitUntilIceGatheringStateComplete(this.peerConnection, this.options);
+				await this.waitUntilIceGatheringStateComplete(pc, this.options);
 			} catch (error)
 			{
+				if (this.peerConnection !== pc || this.state === 'closed')
+					return;
                 console.error("doOffer error: "+error.toString());
 				this.close();
                 console.log("doOffer close");
