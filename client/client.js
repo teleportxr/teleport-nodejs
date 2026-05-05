@@ -411,8 +411,19 @@ class Client {
 		const buffer = new ArrayBuffer(MAX_BUFFER_SIZE);
 		const resourceSize=resource_encoder.EncodeResource(resource,buffer);
 		this.geometryService.EncodedResource(uid);
-		const view2 = new DataView(buffer, 0, resourceSize); 
+		const view2 = new DataView(buffer, 0, resourceSize);
 		console.log("Sending resource "+uid+" "+resource.url+" to Client "+this.clientID+", size: "+resourceSize+" bytes");
+		if(!this.webRtcConnection)
+		{
+			console.error("this.webRtcConnection is null");
+			return;
+		}
+		if(!this.webRtcConnection.sendGeometry)
+		{
+			console.error("this.webRtcConnection.sendGeometry is null");
+			console.log(JSON.stringify(this.webRtcConnection));
+			return;
+		}
 		this.webRtcConnection.sendGeometry(view2);
 	}
 	SendMesh(uid)
