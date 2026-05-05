@@ -330,6 +330,7 @@ class Client {
 		this.currentOriginState.ackId=setp.uint64_ackId;
 		this.currentOriginState.acknowledged=false;
 		this.currentOriginState.serverTimeSentUs=core.getTimestampUs();
+		console.log("Sending SetOriginNodeCommand with origin uid "+setp.uint64_originNodeUid+" and ackId "+setp.uint64_ackId);
 		this.SendCommand(setp);
 	}
 	SendLighting()
