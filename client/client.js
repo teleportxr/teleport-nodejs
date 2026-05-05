@@ -127,7 +127,10 @@ class Client {
         this.clientDynamicLighting=new core.ClientDynamicLighting();
 		// Session is (re)starting; the client has zero state, so retract any
 		// outstanding ack tracking from a previous session and force a resend.
-		this.currentOriginState   = new OriginState();
+		// Clear acknowledgement state but preserve the origin uid that was already set.
+		this.currentOriginState.acknowledged = false;
+		this.currentOriginState.serverTimeSentUs = BigInt(0);
+		this.currentOriginState.ackId = 0;
 		this.currentLightingState = new LightingState();
 		this.setupCommand.float32_draw_distance=10.0;
 		if(this.scene)

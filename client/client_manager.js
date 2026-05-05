@@ -42,7 +42,7 @@ class ClientManager
 				return null;
 			}
 			var origin_uid=this.addClientNodeAndReturnOriginUid(clientID);
-			if(origin_uid==0){
+			if(origin_uid==0) {
 				error("Failed to create a root node for client "+clientID);
 				return null;
 			}
