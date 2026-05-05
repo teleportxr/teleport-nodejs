@@ -150,7 +150,10 @@ function AddTypedResource(typename, path) {
 	return uid;
 }
 
-function AddResourceFromUrl(type, url) {
+function GetOrAddResourceFromUrl(type, url) {
+	if (Resource.pathToUid.has(url)) {
+		return Resource.pathToUid.get(url);
+	}
 	var uid = core.generateUid();
 	var res = null;
 	switch (type) {
@@ -159,7 +162,7 @@ function AddResourceFromUrl(type, url) {
 			throw new Error(
 				"Type ",
 				type,
-				" can't be instantiated with AddResourceFromUrl()."
+				" can't be instantiated with GetOrAddResourceFromUrl()."
 			);
 			break;
 		default:
@@ -186,7 +189,7 @@ function GetOrAddResourceUidFromUrl(type, url){
 		return uid;
 	if(!url)
 		return 0;
-	return AddResourceFromUrl(type, url);
+	return GetOrAddResourceFromUrl(type, url);
 }
 
 function GetResourceFromUrl(url) {
@@ -204,12 +207,12 @@ function GetResourceFromUid(uid) {
 
 //! Add the texture url as a resource.
 function AddTexture(url) {
-	return AddResourceFromUrl(core.GeometryPayloadType.TexturePointer, url);
+	return GetOrAddResourceFromUrl(core.GeometryPayloadType.TexturePointer, url);
 }
 
 //! Add the texture url as a resource.
 function AddMesh(url) {
-	return AddResourceFromUrl(core.GeometryPayloadType.MeshPointer, url);
+	return GetOrAddResourceFromUrl(core.GeometryPayloadType.MeshPointer, url);
 }
 
 function AddFontAtlas(path) {
