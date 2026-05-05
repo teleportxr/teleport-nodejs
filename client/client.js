@@ -143,9 +143,26 @@ class Client {
 			}
 		}
 
-		// Log the setup command for debugging
+		// Log the setup command for debugging - in the CORRECT C++ struct byte order
 		console.log("\n===== NODE SERVER SENDING SETUPCOMMAND =====");
-		console.log(JSON.stringify(this.setupCommand, (key, value) => {
+		const logObj = {
+			CommandPayloadType: this.setupCommand.CommandPayloadType_commandPayloadType,
+			debug_stream: this.setupCommand.uint32_debug_stream,
+			debug_network_packets: this.setupCommand.uint32_debug_network_packets,
+			requiredLatencyMs: this.setupCommand.int32_requiredLatencyMs,
+			idle_connection_timeout: this.setupCommand.uint32_idle_connection_timeout,
+			session_id: this.setupCommand.uint64_session_id,
+			video_config: this.setupCommand.VideoConfig_video_config,
+			draw_distance: this.setupCommand.float32_draw_distance,
+			axesStandard: this.setupCommand.AxesStandard_axesStandard,
+			audio_input_enabled: this.setupCommand.uint8_audio_input_enabled,
+			using_ssl: this.setupCommand.bool_using_ssl,
+			startTimestamp_utc_unix_us: this.setupCommand.int64_startTimestamp_utc_unix_us,
+			backgroundMode: this.setupCommand.BackgroundMode_backgroundMode,
+			backgroundColour: this.setupCommand.vec4_backgroundColour,
+			backgroundTexture: this.setupCommand.uid_backgroundTexture
+		};
+		console.log(JSON.stringify(logObj, (key, value) => {
 			if (typeof value === 'bigint') {
 				return value.toString();
 			}
