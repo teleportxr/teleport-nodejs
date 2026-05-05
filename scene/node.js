@@ -247,7 +247,7 @@ class Node {
 		return Node.sizeof();
 	}
 	setMeshComponent(mesh_url) {
-		resources.AddMesh(mesh_url);
+		resources.GetOrAddMesh(mesh_url);
 		this.components.forEach((component) => {
 			if (component.getType() == NodeDataType.Mesh) {
 				component.meshUrl = mesh_url;

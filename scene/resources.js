@@ -205,13 +205,13 @@ function GetResourceFromUid(uid) {
 	return res;
 }
 
-//! Add the texture url as a resource.
-function AddTexture(url) {
+//! Get or add the texture url as a resource.
+function GetOrAddTexture(url) {
 	return GetOrAddResourceFromUrl(core.GeometryPayloadType.TexturePointer, url);
 }
 
-//! Add the texture url as a resource.
-function AddMesh(url) {
+//! Get or add the mesh url as a resource.
+function GetOrAddMesh(url) {
 	return GetOrAddResourceFromUrl(core.GeometryPayloadType.MeshPointer, url);
 }
 
@@ -236,8 +236,8 @@ module.exports = {
 	GetResourceUidFromUrl,
 	GetOrAddResourceUidFromUrl,
 	GetResourceFromUid,
-	AddTexture,
-	AddMesh,
+	GetOrAddTexture,
+	GetOrAddMesh,
 	AddFontAtlas,
 	AddTextCanvas,
 	AddTypedResource,

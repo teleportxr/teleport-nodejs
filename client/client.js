@@ -131,15 +131,15 @@ class Client {
 			if(this.scene.backgroundTexturePath&&this.scene.backgroundTexturePath!="")
 			{
 				this.setupCommand.BackgroundMode_backgroundMode=BackgroundMode.TEXTURE;
-				this.setupCommand.uid_backgroundTexture=resources.AddTexture(this.scene.backgroundTexturePath);
+				this.setupCommand.uid_backgroundTexture=resources.GetOrAddTexture(this.scene.backgroundTexturePath);
 			}
 			if(this.scene.diffuseCubemapPath&&this.scene.diffuseCubemapPath!="")
 			{
-				this.clientDynamicLighting.uid_diffuse_cubemap_texture_uid=resources.AddTexture(this.scene.diffuseCubemapPath);
+				this.clientDynamicLighting.uid_diffuse_cubemap_texture_uid=resources.GetOrAddTexture(this.scene.diffuseCubemapPath);
 			}
 			if(this.scene.specularCubemapPath&&this.scene.specularCubemapPath!="")
 			{
-				this.clientDynamicLighting.uid_specular_cubemap_texture_uid=resources.AddTexture(this.scene.specularCubemapPath);
+				this.clientDynamicLighting.uid_specular_cubemap_texture_uid=resources.GetOrAddTexture(this.scene.specularCubemapPath);
 			}
 		}
 

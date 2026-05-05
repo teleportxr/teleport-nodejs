@@ -176,17 +176,17 @@ class Scene {
 			if(j.environment.background_texture)
 			{
 				this.backgroundTexturePath=j.environment.background_texture;
-				resources.AddTexture(this.backgroundTexturePath);
+				resources.GetOrAddTexture(this.backgroundTexturePath);
 			}
 			if(j.environment.diffuse_cubemap)
 			{
 				this.diffuseCubemapPath=j.environment.diffuse_cubemap;
-				resources.AddTexture(this.diffuseCubemapPath);
+				resources.GetOrAddTexture(this.diffuseCubemapPath);
 			}
 			if(j.environment.specular_cubemap)
 			{
 				this.specularCubemapPath=j.environment.specular_cubemap;
-				resources.AddTexture(this.specularCubemapPath);
+				resources.GetOrAddTexture(this.specularCubemapPath);
 			}
 		}
 		if(j.font_atlases)
