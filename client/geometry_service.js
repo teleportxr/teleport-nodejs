@@ -119,7 +119,7 @@ class GeometryService {
 		var index = clientIDToIndex.get(this.clientID);
 		if (GeometryService.trackedResources.has(uid)) {
 			var res = GeometryService.GetOrCreateTrackedResource(uid);
-			res.clientNeeds.BitSet(index, false);
+			res.clientNeeds.set(index, false);
 		}
 		// Should certainly be in this set:
 		this.nodesToStreamEventually.delete(uid);
