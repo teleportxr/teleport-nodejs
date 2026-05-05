@@ -305,19 +305,27 @@ class Client {
 		let time_now_us=core.getTimestampUs();
 		let originAckWaitTimeUs=BigInt(3000000);// three seconds
 		if(this.setupCommand.startTimestamp_utc_unix_us==0)
+		{
+			console.log("Start timestamp is not set, so not sending origin.");
 			return ;
+		}
 		// If we sent it, and  haven't timed out waiting for ack...
 		if(this.currentOriginState.serverTimeSentUs!=BigInt(0)
 			&&(time_now_us-this.currentOriginState.serverTimeSentUs)<originAckWaitTimeUs)
 		{
+			console.log("Waiting for acknowledgement of SetOriginNodeCommand with origin uid "+this.currentOriginState.originClientHas+" and ackId "+this.currentOriginState.ackId+". Time since sent: "+(time_now_us-this.currentOriginState.serverTimeSentUs)+" us.");
 			return;
 		}
 		if (!this.webRtcConnection)
 		{
+			console.log("WebRTC connection is not established, so not sending origin.");
 			return;
 		}
 		if(this.currentOriginState.originClientHas==BigInt(0))
+		{
+			console.log("Origin client has is 0, so not sending origin.");
 			return;
+		}
 		this.currentOriginState.valid_counter++;
 		this.geometryService.SetOriginNode(this.currentOriginState.originClientHas);
 		var setp=new command.SetOriginNodeCommand();
@@ -330,7 +338,9 @@ class Client {
 		this.currentOriginState.ackId=setp.uint64_ackId;
 		this.currentOriginState.acknowledged=false;
 		this.currentOriginState.serverTimeSentUs=core.getTimestampUs();
+		console.log("\n===== NODE SERVER SENDING SETORIGINCOMMAND =====");
 		console.log("Sending SetOriginNodeCommand with origin uid "+setp.uint64_originNodeUid+" and ackId "+setp.uint64_ackId);
+		console.log("\n===== END SETORIGINCOMMAND =====");
 		this.SendCommand(setp);
 	}
 	SendLighting()
@@ -338,15 +348,20 @@ class Client {
 		let time_now_us=core.getTimestampUs();
 		let ackWaitTimeUs=BigInt(3000000);// three seconds
 		if(this.setupCommand.startTimestamp_utc_unix_us==0)
+		{
+			console.log("Start timestamp is not set, so not sending lighting.");
 			return;
+		}
 		// If we sent it, and  haven't timed out waiting for ack...
 		if(this.currentLightingState.serverTimeSentUs!=BigInt(0)
 			&&(time_now_us-this.currentLightingState.serverTimeSentUs)<ackWaitTimeUs)
 		{
+			console.log("Waiting for acknowledgement of SetLightingCommand with ackId "+this.currentLightingState.ackId+". Time since sent: "+(time_now_us-this.currentLightingState.serverTimeSentUs)+" us.");
 			return;
 		}
 		if (!this.webRtcConnection)
 		{
+			console.log("WebRTC connection is not established, so not sending lighting.");
 			return;
 		}
 
