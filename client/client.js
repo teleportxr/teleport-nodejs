@@ -182,7 +182,14 @@ class Client {
     SendCommand(command){
         let array=core.encodeToUint8Array(command);
         console.log("SendCommand: encoded to", array.length, "bytes, expected", command.size(), "bytes");
-        this.signalingSend(array);
+        // Once the WebRTC reliable data channel is open, route commands through it
+        // (matches the C++ server's sendCommand path). Bootstrap commands sent
+        // before the channel is open (SetupCommand, AcknowledgeHandshakeCommand)
+        // fall back to the signaling WebSocket.
+        if(this.webRtcConnection && this.webRtcConnection.isReliableOpen())
+            this.webRtcConnection.sendReliable(array);
+        else
+            this.signalingSend(array);
     }
     // We call StartStreaming once the SetupCommand has been acknowledged.
     StartStreaming()

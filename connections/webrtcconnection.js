@@ -343,11 +343,22 @@ class WebRtcConnection extends EventEmitter
 		this.emit('closed');
 	};
     sendGeometry(buffer) {
-		try {	
+		try {
         	this.geometryDataChannel.send(buffer);
 		}
 		catch(exception) {
             console.error('datachannel.sendGeometry exception: '+exception.message);
+		}
+    }
+	isReliableOpen() {
+		return !!(this.reliableDataChannel && this.reliableDataChannel.readyState === 'open');
+	}
+    sendReliable(buffer) {
+		try {
+			this.reliableDataChannel.send(buffer);
+		}
+		catch(exception) {
+            console.error('datachannel.sendReliable exception: '+exception.message);
 		}
     }
     beforeOffer() {
