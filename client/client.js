@@ -11,6 +11,11 @@ const resources= require("../scene/resources.js");
 const { BackgroundMode } = require("../core/core.js");
 
 
+// Maximum number of times an unacknowledged origin/lighting command will be
+// resent before we give up and log a disconnect. With a 3s ack timeout this
+// gives roughly MAX_ACK_RESENDS*3 seconds before we stop trying.
+const MAX_ACK_RESENDS = 5;
+
 class OriginState
 {
     constructor() {
@@ -20,6 +25,8 @@ class OriginState
 		this.acknowledged=false;
 		this.serverTimeSentUs=BigInt(0);
 		this.valid_counter=BigInt(0);
+		this.resendCount=0;
+		this.givenUp=false;
 	}
 };
 
@@ -30,6 +37,8 @@ class LightingState
 		this.acknowledged=false;
 		this.serverTimeSentUs=BigInt(0);
 		this.clientDynamicLighting=new core.ClientDynamicLighting();
+		this.resendCount=0;
+		this.givenUp=false;
 	}
 };
 
@@ -64,9 +73,24 @@ class Client {
 			this.webRtcConnected=false;
 		}
     }
-	receivedMessageReliable(id,data)
+	receivedMessageReliable(id,pkt)
 	{
-		console.log('Client receivedMessage reliable ch.'+id+' received: '+data+'.');
+        var dataView=new DataView(pkt.data,0,1);
+        const messageType=dataView.getUint8(0);
+        switch(messageType){
+            case message.MessagePayloadType.ReceivedResources:
+                this.receiveReceivedResourcesMessage(pkt.data);
+                return;
+			case message.MessagePayloadType.Acknowledgement:
+				this.ReceiveAcknowledgement(pkt.data);
+				return;
+			case message.MessagePayloadType.ControllerPoses:
+				this.ReceiveNodePoses(pkt.data);
+				return;
+            default:
+				console.log('Client receivedMessageReliable ch.'+id+' unknown messageType '+messageType+'.');
+                break;
+        }
 	}
 	// Is the Buffer bf too small to contain a type tp?
 	checkTooSmall(tp,bf) {
@@ -131,8 +155,14 @@ class Client {
 		this.currentOriginState.acknowledged = false;
 		this.currentOriginState.serverTimeSentUs = BigInt(0);
 		this.currentOriginState.ackId = 0;
+		this.currentOriginState.resendCount = 0;
+		this.currentOriginState.givenUp = false;
 		this.currentLightingState = new LightingState();
 		this.setupCommand.float32_draw_distance=10.0;
+		// The C++ client uses startTimestamp_utc_unix_us as the session epoch
+		// against which subsequent message timestamps are measured. Without it
+		// some message handlers will not progress.
+		this.setupCommand.int64_startTimestamp_utc_unix_us = BigInt(core.getStartTimeUnixUs());
 		if(this.scene)
 		{
 			if(this.scene.backgroundTexturePath&&this.scene.backgroundTexturePath!="")
@@ -227,10 +257,12 @@ class Client {
 		if(msg.uint64_ackId==this.currentOriginState.ackId)
 		{
 			this.currentOriginState.acknowledged=true;
+			this.currentOriginState.resendCount=0;
 		}
 		if(msg.uint64_ackId==this.currentLightingState.ackId)
 		{
 			this.currentLightingState.acknowledged=true;
+			this.currentLightingState.resendCount=0;
 		}
 	}
 	ReceiveNodePoses(data)
@@ -305,16 +337,16 @@ class Client {
 		{
 			this.SendTexture(uid);
 		}
-		if(!this.currentOriginState.acknowledged)
+		if(!this.currentOriginState.acknowledged && !this.currentOriginState.givenUp)
 			this.SendOrigin();
-		if(!this.currentLightingState.acknowledged)
+		if(!this.currentLightingState.acknowledged && !this.currentLightingState.givenUp)
 			this.SendLighting();
 	}
 	SendOrigin()
 	{
 		let time_now_us=core.getTimestampUs();
 		let originAckWaitTimeUs=BigInt(3000000);// three seconds
-		if(this.setupCommand.startTimestamp_utc_unix_us==0)
+		if(this.setupCommand.int64_startTimestamp_utc_unix_us==BigInt(0))
 		{
 			console.log("Start timestamp is not set, so not sending origin.");
 			return ;
@@ -335,6 +367,18 @@ class Client {
 		{
 			console.log("Origin client has is 0, so not sending origin.");
 			return;
+		}
+		// A previous send timed out without an ack. Bound the resend loop so
+		// we don't spam the client forever if it never acknowledges.
+		if(this.currentOriginState.serverTimeSentUs!=BigInt(0))
+		{
+			this.currentOriginState.resendCount++;
+			if(this.currentOriginState.resendCount>MAX_ACK_RESENDS)
+			{
+				console.log("Client "+this.clientID+": gave up resending SetOriginNodeCommand after "+this.currentOriginState.resendCount+" attempts; treating client as disconnected for origin.");
+				this.currentOriginState.givenUp=true;
+				return;
+			}
 		}
 		this.currentOriginState.valid_counter++;
 		this.geometryService.SetOriginNode(this.currentOriginState.originClientHas);
@@ -357,7 +401,7 @@ class Client {
 	{
 		let time_now_us=core.getTimestampUs();
 		let ackWaitTimeUs=BigInt(3000000);// three seconds
-		if(this.setupCommand.startTimestamp_utc_unix_us==0)
+		if(this.setupCommand.int64_startTimestamp_utc_unix_us==BigInt(0))
 		{
 			console.log("Start timestamp is not set, so not sending lighting.");
 			return;
@@ -373,6 +417,18 @@ class Client {
 		{
 			console.log("WebRTC connection is not established, so not sending lighting.");
 			return;
+		}
+		// A previous send timed out without an ack. Bound the resend loop so
+		// we don't spam the client forever if it never acknowledges.
+		if(this.currentLightingState.serverTimeSentUs!=BigInt(0))
+		{
+			this.currentLightingState.resendCount++;
+			if(this.currentLightingState.resendCount>MAX_ACK_RESENDS)
+			{
+				console.log("Client "+this.clientID+": gave up resending SetLightingCommand after "+this.currentLightingState.resendCount+" attempts; treating client as disconnected for lighting.");
+				this.currentLightingState.givenUp=true;
+				return;
+			}
 		}
 
 		var setl					=new command.SetLightingCommand();
