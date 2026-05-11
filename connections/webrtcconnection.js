@@ -372,7 +372,7 @@ class WebRtcConnection extends EventEmitter
         this.videoDataChannel = this.createDataChannel("video",20);
         this.tagDataChannel = this.createDataChannel("video_tags",40);
         this.audioToClientDataChannel = this.createDataChannel("audio_server_to_client",60);
-        this.geometryDataChannel = this.createDataChannel("geometry",80);
+        this.geometryDataChannel = this.createDataChannel("geometry_unframed",80);
         this.reliableDataChannel = this.createDataChannel("reliable",100);
         this.unreliableDataChannel = this.createDataChannel("unreliable",120,false);
       
