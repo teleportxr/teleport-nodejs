@@ -208,7 +208,13 @@ class WebRtcConnection extends EventEmitter
 				if (this.peerConnection !== pc) return;
 				await pc.setLocalDescription(offer);
 				if (this.peerConnection !== pc) return;
-				var message = '{"teleport-signal-type":"offer","sdp":"'+offer.sdp+'"}'; //
+				// Use pc.localDescription.sdp rather than the createOffer() result: the
+				// ICE ufrag/pwd in the SDP returned by createOffer() are provisional and
+				// libwebrtc may activate a transport with different credentials in
+				// setLocalDescription(), which would cause STUN ufrag check failures on
+				// the remote peer.
+				const localSdp = (pc.localDescription && pc.localDescription.sdp) || offer.sdp;
+				var message = '{"teleport-signal-type":"offer","sdp":"'+localSdp+'"}';
 				this.sendConfigMessage(this.id,message);
 				await this.waitUntilIceGatheringStateComplete(pc, this.options);
 			} catch (error)
