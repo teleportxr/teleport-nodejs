@@ -53,6 +53,7 @@ var webRtcConnectionManager = null;
 var newClient=null;
 var disconnectClient=null;
 var clientHostHeader = ""; // Store the first client's host header for resource URLs
+var clientProtoHeader = ""; // Store the first client's X-Forwarded-Proto header
 function startStreaming(signalingClient) {
     signalingClient.ChangeSignalingState(SignalingState.ACCEPTED);
 	// And we send the WebSockets connect-response.
@@ -185,20 +186,20 @@ function OnWebSocket(ws, req) {
 			signalingClient.ip_addr_port.toString()
 	);
 
-	// Capture the Host header from the first client connection for resource URLs
-	// This allows us to auto-detect the server's public address
+	// Capture the Host and X-Forwarded-Proto headers from the first client connection
+	// for resource URL auto-detection.
 	if (!clientHostHeader && req.headers) {
-		// Try to get the host from headers, preferring X-Forwarded-Host (for reverse proxies)
-		const xForwardedHost = req.headers['x-forwarded-host'];
-		const hostHeader = req.headers['host'];
-		clientHostHeader = xForwardedHost || hostHeader || '';
+		// Prefer X-Forwarded-Host / X-Forwarded-Proto set by a reverse proxy.
+		const xForwardedHost  = req.headers['x-forwarded-host'];
+		const xForwardedProto = req.headers['x-forwarded-proto'];
+		const hostHeader      = req.headers['host'];
+		clientHostHeader  = xForwardedHost  || hostHeader || '';
+		clientProtoHeader = xForwardedProto || '';
 		if (clientHostHeader) {
 			console.log("Auto-detected resource server host from client connection: " + clientHostHeader);
-			if (xForwardedHost) {
-				console.log("  (from X-Forwarded-Host: " + xForwardedHost + ")");
-			} else if (hostHeader) {
-				console.log("  (from Host: " + hostHeader + ")");
-			}
+			if (xForwardedHost)  console.log("  (from X-Forwarded-Host: "  + xForwardedHost  + ")");
+			else                  console.log("  (from Host: "              + hostHeader       + ")");
+			if (xForwardedProto) console.log("  (from X-Forwarded-Proto: " + xForwardedProto + ")");
 		} else {
 			console.log("WARNING: Could not auto-detect host from request headers");
 			console.log("  Available headers: " + JSON.stringify(req.headers));
@@ -299,4 +300,9 @@ exports.signalingClients = signalingClients;
 // Export function to retrieve the auto-detected client host header for resource URLs
 exports.getClientHostHeader = function () {
 	return clientHostHeader;
+};
+
+// Export function to retrieve the auto-detected X-Forwarded-Proto header
+exports.getClientProtoHeader = function () {
+	return clientProtoHeader;
 };
