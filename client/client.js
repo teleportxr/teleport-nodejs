@@ -559,9 +559,11 @@ class Client {
             console.log("Handshake claims to have "<<handshakeMessage.uint64_resourceCount<<" resources but has only enough data for "+numReceived);
         }
 		else {
+			// Wrap the Node Buffer correctly: use its underlying ArrayBuffer together with
+			// byteOffset (Buffers may share a pooled ArrayBuffer, so offset 0 is wrong).
+			var dataView	=new DataView(data.buffer, data.byteOffset, data.byteLength);
 			var offset		=message.HandshakeMessage.sizeof();
-			var dataView	=new DataView(data.buffer,offset,data.offset,data.length);
-			for(let i=0;i<this.handshakeMessage.resourceCount;i++ ) {
+			for(let i=0;i<handshakeMessage.uint64_resourceCount;i++ ) {
 				var uid=dataView.getBigUint64(offset,core.endian);
 				this.geometryService.ConfirmResource(uid);
 				offset+=core.UID_SIZE;
