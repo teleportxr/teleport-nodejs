@@ -267,8 +267,10 @@ class Client {
 			return;
 		}
         var msg				=new message.AcknowledgementMessage();
-		var bf				=data;
-		var dataView		=new DataView(data,0,data.length);
+		// data arrives from the WebSocket signaling channel as a Node Buffer (Uint8Array view over a pooled
+		// ArrayBuffer), so we must wrap its underlying buffer using byteOffset/byteLength rather than passing
+		// the Buffer directly to DataView.
+		var dataView		=new DataView(data.buffer,data.byteOffset,data.byteLength);
 		core.decodeFromDataView(msg,dataView,0);
 		if(msg.uint64_ackId==this.currentOriginState.ackId)
 		{
