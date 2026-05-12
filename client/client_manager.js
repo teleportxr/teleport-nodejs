@@ -22,7 +22,7 @@ class ClientManager
 		this.geometryIntervalId = setInterval(_.bind( function() {
 			//console.log("Streaming Update at "+core.getTimestampUs()/1000000.0);
 			this.UpdateStreaming();
-		  },this), 5000);
+		  },this), 1000);
 	}
 	StopStreaming(){
 		if(this.geometryIntervalId!=0)

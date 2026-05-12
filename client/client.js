@@ -54,7 +54,15 @@ class Client {
 		this.currentOriginState=new OriginState();
 		this.currentLightingState=new LightingState();
 		this.next_ack_id=BigInt(1);
+		this.clientStartMs=Date.now();
+		this.webRtcConnectedAtMs=0;
     }
+	elapsedMsSinceStart(){
+		return Date.now()-this.clientStartMs;
+	}
+	elapsedMsSinceConnected(){
+		return this.webRtcConnectedAtMs?Date.now()-this.webRtcConnectedAtMs:-1;
+	}
 	tick(timestamp){
 		this.geometryService.GetNodesToSend();
 	}
@@ -62,11 +70,16 @@ class Client {
     {
         //this.webRtcConnection=wrtcConn;
 		// This should have come from our own existing webRtcConnection and nowhere else.
-        console.log("Connection state is "+newState.toString());
+        console.log("[T+"+this.elapsedMsSinceStart()+"ms] Connection state is "+newState.toString());
 		if(newState=="connected")
 		{
        		//this.webRtcConnection.sendGeometry("test");
 			this.webRtcConnected=true;
+			this.webRtcConnectedAtMs=Date.now();
+			console.log("[T+"+this.elapsedMsSinceStart()+"ms] WebRTC CONNECTED for client "+this.clientID+" — triggering immediate UpdateStreaming tick.");
+			// Kick an immediate tick so SetOriginNode and the first resource batch are
+			// sent without waiting for the next periodic interval (up to 1000 ms away).
+			setImmediate(this.UpdateStreaming.bind(this));
 		}
 		else
 		{
@@ -147,6 +160,8 @@ class Client {
     // In Start() we send the SetupCommand.
     Start()
     {
+		this.clientStartMs=Date.now();
+		console.log("[T+0ms] Client.Start() — sending SetupCommand for client "+this.clientID);
         this.setupCommand=new command.SetupCommand();
         this.clientDynamicLighting=new core.ClientDynamicLighting();
 		// Session is (re)starting; the client has zero state, so retract any
@@ -224,6 +239,7 @@ class Client {
     // We call StartStreaming once the SetupCommand has been acknowledged.
     StartStreaming()
     {
+		console.log("[T+"+this.elapsedMsSinceStart()+"ms] Client.StartStreaming() — creating WebRTC connection for client "+this.clientID);
 		this.webRtcConnectionManager=WebRtcConnectionManager.getInstance();
         // We make sure WebRTC has a connection for this client.
   		this.webRtcConnection = this.webRtcConnectionManager.createConnection(
@@ -304,6 +320,7 @@ class Client {
 			return;
 		if(!this.webRtcConnected)
 			return;
+		console.log("[T+"+this.elapsedMsSinceStart()+"ms, conn+"+this.elapsedMsSinceConnected()+"ms] UpdateStreaming tick for client "+this.clientID);
 		var timestamp=core.getTimestampUs();
 		// Establish which nodes the client should have, and their resources.
 		// Then: which resources we think it does not yet have. Send those.
@@ -393,7 +410,7 @@ class Client {
 		this.currentOriginState.acknowledged=false;
 		this.currentOriginState.serverTimeSentUs=core.getTimestampUs();
 		console.log("\n===== NODE SERVER SENDING SETORIGINCOMMAND =====");
-		console.log("Sending SetOriginNodeCommand with origin uid "+setp.uint64_originNodeUid+" and ackId "+setp.uint64_ackId);
+		console.log("[T+"+this.elapsedMsSinceStart()+"ms, conn+"+this.elapsedMsSinceConnected()+"ms] Sending SetOriginNodeCommand with origin uid "+setp.uint64_originNodeUid+" and ackId "+setp.uint64_ackId);
 		console.log("\n===== END SETORIGINCOMMAND =====");
 		this.SendCommand(setp);
 	}
