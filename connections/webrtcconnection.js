@@ -134,11 +134,6 @@ class WebRtcConnection extends EventEmitter
 
 		this.reconnectionTimer = null;
 
-		this.peerConnection.addEventListener('iceconnectionstatechange', this._onIceConnectionStateChange);
-		this.peerConnection.addEventListener('icegatheringstatechange', this._onIceGatheringStateChange);
-		this.peerConnection.addEventListener("icecandidateerror", this._onIceCandidateError);
-		this.peerConnection.addEventListener("connectionstatechange", this._onConnectionStateChange);
-
         this.onIceCandidate= ({ candidate })=>
         {
             if (!candidate)
@@ -153,6 +148,17 @@ class WebRtcConnection extends EventEmitter
             var message = '{"teleport-signal-type":"candidate","candidate":"'+candidate.candidate+'","mid":"'+mid.toString()+'","mlineindex":'+mlineindex.toString()+'}';
             this.sendConfigMessage(this.id,message);
         }
+
+		this.peerConnection.addEventListener('iceconnectionstatechange', this._onIceConnectionStateChange);
+		this.peerConnection.addEventListener('icegatheringstatechange', this._onIceGatheringStateChange);
+		this.peerConnection.addEventListener("icecandidateerror", this._onIceCandidateError);
+		this.peerConnection.addEventListener("connectionstatechange", this._onConnectionStateChange);
+		// Attach the icecandidate listener here, before doOffer can call
+		// setLocalDescription(). libwebrtc starts the ICE agent inside
+		// setLocalDescription() and emits host candidates synchronously on
+		// resolution; attaching this listener later (e.g. inside
+		// waitUntilIceGatheringStateComplete) silently loses those candidates.
+		this.peerConnection.addEventListener('icecandidate', this.onIceCandidate);
         this.waitUntilIceGatheringStateComplete= async  (peerConnection, options) =>
         {
             if (peerConnection.iceGatheringState === 'complete')
@@ -193,7 +199,6 @@ class WebRtcConnection extends EventEmitter
             this.timeout = options.setTimeout(() => this.iceGatheringSettle(), timeToHostCandidates);
 
             peerConnection.addEventListener('icegatheringstatechange', onGatheringStateChange);
-            peerConnection.addEventListener('icecandidate', this.onIceCandidate);
 
             await this.deferred.promise;
         }
