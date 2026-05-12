@@ -11,7 +11,8 @@
     "ws": "^8.13.0"
   },
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test test/"
   },
   "name": "teleportxr",
   "description": "Teleport Spatial Server on node.js",

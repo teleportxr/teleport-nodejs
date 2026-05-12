@@ -56,7 +56,9 @@ class WebRtcConnection extends EventEmitter
 		this.messageReceivedReliableCb		=options.messageReceivedReliable;
 		this.messageReceivedUnreliableCb	=options.messageReceivedUnreliable;
 		this.connectionStateChangedCb=options.connectionStateChanged;
+		this.dataChannelsOpenCb		=options.dataChannelsOpen;
 		this.sendConfigMessage		=options.sendConfigMessage;
+		this._dataChannelsOpenFired	=false;
 
 		this._onIceConnectionStateChange = this.onIceConnectionStateChange.bind(this);
 		this._onIceGatheringStateChange  = this.onIceGatheringStateChange.bind(this);
@@ -348,25 +350,58 @@ class WebRtcConnection extends EventEmitter
 		this.state = 'closed';
 		this.emit('closed');
 	};
-    sendGeometry(buffer) {
-		try {
-        	this.geometryDataChannel.send(buffer);
-		}
-		catch(exception) {
-            console.error('datachannel.sendGeometry exception: '+exception.message);
-		}
-    }
+	isGeometryOpen() {
+		return !!(this.geometryDataChannel && this.geometryDataChannel.readyState === 'open');
+	}
 	isReliableOpen() {
 		return !!(this.reliableDataChannel && this.reliableDataChannel.readyState === 'open');
 	}
-    sendReliable(buffer) {
+	// Invoked from each data channel's onopen. Fires the dataChannelsOpen callback
+	// exactly once per PeerConnection, the moment both reliable and geometry
+	// channels are in 'open' state. This lets Client.UpdateStreaming run as soon
+	// as the channels can accept traffic rather than waiting for the next
+	// periodic tick (up to 1 s away).
+	_handleDataChannelOpen(label) {
+		if (this._dataChannelsOpenFired)
+			return;
+		if (!this.isGeometryOpen() || !this.isReliableOpen())
+			return;
+		this._dataChannelsOpenFired = true;
+		if (this.dataChannelsOpenCb)
+		{
+			try { this.dataChannelsOpenCb(); }
+			catch (e) { console.error('dataChannelsOpenCb threw: '+e.message); }
+		}
+	}
+	// Returns true if the buffer was handed to the underlying transport, false if the
+	// channel was not in the 'open' state or send() threw. Callers must use the
+	// return value to gate any "this resource has been transmitted" bookkeeping;
+	// otherwise a dropped send leaves the resource marked Sent and it won't be
+	// retried until geometry_service.timeout_us elapses (default 10 s).
+	sendGeometry(buffer) {
+		if (!this.isGeometryOpen())
+			return false;
 		try {
-			this.reliableDataChannel.send(buffer);
+			this.geometryDataChannel.send(buffer);
+			return true;
 		}
 		catch(exception) {
-            console.error('datachannel.sendReliable exception: '+exception.message);
+			console.error('datachannel.sendGeometry exception: '+exception.message);
+			return false;
 		}
-    }
+	}
+	sendReliable(buffer) {
+		if (!this.isReliableOpen())
+			return false;
+		try {
+			this.reliableDataChannel.send(buffer);
+			return true;
+		}
+		catch(exception) {
+			console.error('datachannel.sendReliable exception: '+exception.message);
+			return false;
+		}
+	}
     beforeOffer() {
           
         this.videoDataChannel = this.createDataChannel("video",20);
@@ -425,6 +460,7 @@ class WebRtcConnection extends EventEmitter
   
           dc.onopen = (event) => {
             console.log('datachannel '+label+' open');
+            this._handleDataChannelOpen(label);
            //dc.send('XXXX');
         };
   

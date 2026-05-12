@@ -73,19 +73,29 @@ class Client {
         console.log("[T+"+this.elapsedMsSinceStart()+"ms] Connection state is "+newState.toString());
 		if(newState=="connected")
 		{
-       		//this.webRtcConnection.sendGeometry("test");
 			this.webRtcConnected=true;
 			this.webRtcConnectedAtMs=Date.now();
-			console.log("[T+"+this.elapsedMsSinceStart()+"ms] WebRTC CONNECTED for client "+this.clientID+" — triggering immediate UpdateStreaming tick.");
-			// Kick an immediate tick so SetOriginNode and the first resource batch are
-			// sent without waiting for the next periodic interval (up to 1000 ms away).
-			setImmediate(this.UpdateStreaming.bind(this));
+			console.log("[T+"+this.elapsedMsSinceStart()+"ms] WebRTC CONNECTED for client "+this.clientID+" — awaiting data channels.");
+			// Do NOT call UpdateStreaming() here. The PeerConnection reaching
+			// 'connected' does not guarantee that the geometry/reliable data
+			// channels are in 'open' state yet; sends issued now will throw
+			// InvalidStateError. Instead, UpdateStreaming is triggered from the
+			// dataChannelsOpen callback registered in StartStreaming().
 		}
 		else
 		{
 			this.webRtcConnected=false;
 		}
     }
+	// Invoked once per WebRTC connection, the moment both reliable and geometry
+	// data channels are simultaneously in 'open' state. Kicks an immediate
+	// streaming tick so the first node/resource batch goes out without waiting
+	// for the next periodic interval (up to 1000 ms away).
+	onDataChannelsOpen()
+	{
+		console.log("[T+"+this.elapsedMsSinceStart()+"ms, conn+"+this.elapsedMsSinceConnected()+"ms] data channels open for client "+this.clientID+" — triggering immediate UpdateStreaming tick.");
+		setImmediate(this.UpdateStreaming.bind(this));
+	}
 	receivedMessageReliable(id,pkt)
 	{
         var dataView=new DataView(pkt.data,0,1);
@@ -246,7 +256,8 @@ class Client {
 										this.clientID
 										,this.streamingConnectionStateChanged.bind(this)
 										,this.receivedMessageReliable.bind(this)
-										,this.receivedMessageUnreliable.bind(this));
+										,this.receivedMessageUnreliable.bind(this)
+										,this.onDataChannelsOpen.bind(this));
 		//.then(
 		//	function(value) {myDisplayer(value);},
 		//	function(error) {myDisplayer(error);}
@@ -486,21 +497,21 @@ class Client {
 		const MAX_NODE_SIZE=500;
 		const buffer = new ArrayBuffer(MAX_NODE_SIZE);
 		const nodeSize=node_encoder.encodeNode(node,buffer);
-		this.geometryService.EncodedResource(uid);
-		const view2 = new DataView(buffer, 0, nodeSize); 
-		console.log("Sending node "+uid+" "+node.name+" to Client "+this.clientID+", size: "+nodeSize+" bytes");
+		const view2 = new DataView(buffer, 0, nodeSize);
 		if(!this.webRtcConnection)
 		{
 			console.error("this.webRtcConnection is null");
 			return;
 		}
-		if(!this.webRtcConnection.sendGeometry)
+		if(!this.webRtcConnection.isGeometryOpen())
 		{
-			console.error("this.webRtcConnection.sendGeometry is null");
-			console.log(JSON.stringify(this.webRtcConnection));
+			// Channel not yet open; leave the resource unmarked so it retries on
+			// the next UpdateStreaming tick without waiting for the timeout.
 			return;
 		}
-		this.webRtcConnection.sendGeometry(view2);
+		console.log("Sending node "+uid+" "+node.name+" to Client "+this.clientID+", size: "+nodeSize+" bytes");
+		if(this.webRtcConnection.sendGeometry(view2))
+			this.geometryService.EncodedResource(uid);
 	}
 	SendGenericResource(uid)
 	{
@@ -513,21 +524,21 @@ class Client {
 		const MAX_BUFFER_SIZE=resource.encodedSize();;
 		const buffer = new ArrayBuffer(MAX_BUFFER_SIZE);
 		const resourceSize=resource_encoder.EncodeResource(resource,buffer);
-		this.geometryService.EncodedResource(uid);
 		const view2 = new DataView(buffer, 0, resourceSize);
-		console.log("Sending resource "+uid+" "+resource.url+" to Client "+this.clientID+", size: "+resourceSize+" bytes");
 		if(!this.webRtcConnection)
 		{
 			console.error("this.webRtcConnection is null");
 			return;
 		}
-		if(!this.webRtcConnection.sendGeometry)
+		if(!this.webRtcConnection.isGeometryOpen())
 		{
-			console.error("this.webRtcConnection.sendGeometry is null");
-			console.log(JSON.stringify(this.webRtcConnection));
+			// Channel not yet open; leave the resource unmarked so it retries on
+			// the next UpdateStreaming tick without waiting for the timeout.
 			return;
 		}
-		this.webRtcConnection.sendGeometry(view2);
+		console.log("Sending resource "+uid+" "+resource.url+" to Client "+this.clientID+", size: "+resourceSize+" bytes");
+		if(this.webRtcConnection.sendGeometry(view2))
+			this.geometryService.EncodedResource(uid);
 	}
 	SendMesh(uid)
 	{
@@ -571,10 +582,13 @@ class Client {
 				offset+=core.UID_SIZE;
 			}
 		}
+		// Kick WebRTC negotiation off first so the createOffer / setLocalDescription
+		// / ICE gathering pipeline overlaps the signaling round-trip for the ack
+		// below. The C++ client buffers offers and candidates that arrive while
+		// it is still processing the ack, so ordering is safe.
+		this.StartStreaming();
         var acknowledgeHandshakeCommand=new command.AcknowledgeHandshakeCommand;
         this.SendCommand(acknowledgeHandshakeCommand);
-		// And now, setup is complete. On the next geometry update, we can send nodes/resources.
-		this.StartStreaming();
     }
     receiveReliableBinaryMessage(data){
         const messageType=data[0];
