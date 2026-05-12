@@ -255,8 +255,10 @@ class Client {
 	//! disconnecting, or when the server determines that the client is lost or needs to be booted.
 	StopStreaming()
 	{
-		this.webRtcConnectionManager.destroyConnection(this.clientID);
+		if(this.webRtcConnectionManager)
+			this.webRtcConnectionManager.destroyConnection(this.clientID);
 		this.webRtcConnection=null;
+		this.webRtcConnectionManager=null;
 	}
 	// Generic message acknowledgement. Certain kinds of message are expected to be ack'ed.
 	ReceiveAcknowledgement(data)
