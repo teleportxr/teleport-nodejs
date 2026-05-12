@@ -381,8 +381,13 @@ class GeometryService {
 					continue;
 				}
 			}
+			// Do NOT mark Sent here. The caller's Send*() path checks
+			// isGeometryOpen() and may bail out silently if the geometry channel
+			// hasn't finished opening yet; marking Sent eagerly would leave the
+			// resource stuck "in flight" until timeout_us (10 s) elapses, even
+			// though nothing was actually transmitted. The successful-send path
+			// calls EncodedResource(uid), which records the Sent state.
 			toSend.push(uid);
-			res.Sent(this.clientID, time_now_us);
 		}
 		return toSend;
 	}
@@ -406,26 +411,11 @@ class GeometryService {
 	// Get the list of meshes to stream. This is the list of meshes that we should have on the client
 	//  excluding those that have been sent.
 	GetMeshesToSend() {
-		var resource_uids = [];
-		let time_now_us = core.getTimestampUs();
-		for (const [uid, count] of this.streamedMeshes) {
-			//is mesh streamed
-			var res = GeometryService.GetOrCreateTrackedResource(uid);
-			// If it was already received we don't send it:
-			if (res.WasAcknowledgedByClient(this.clientID)) continue;
-			if (res.WasSentToClient(this.clientID)) {
-				var timeSentUs = res.GetTimeSent(this.clientID);
-				// If we sent it too long ago with no acknowledgement, we can send it again.
-				if (time_now_us - timeSentUs > this.timeout_us) {
-					res.Timeout(this.clientID);
-				}
-			} else {
-				// if it hasn't been sent at all to our client, we add its resources.
-				resource_uids.push(uid);
-				res.Sent(this.clientID, time_now_us);
-			}
-		}
-		return resource_uids;
+		// Delegate to GetResourcesToSend so all resource pools share the same
+		// "not acknowledged AND (not sent OR sent-but-timed-out)" rule, and the
+		// same gating contract — Sent is recorded by EncodedResource() after the
+		// transport actually accepts the buffer, not by the picker.
+		return this.GetResourcesToSend(this.streamedMeshes);
 	}
 	EncodedResource(resource_uid) {
 		if (!GeometryService.trackedResources.has(resource_uid)) return;
