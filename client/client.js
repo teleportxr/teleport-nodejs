@@ -280,10 +280,16 @@ class Client {
 			return;
 		}
         var msg				=new message.AcknowledgementMessage();
-		// data arrives from the WebSocket signaling channel as a Node Buffer (Uint8Array view over a pooled
-		// ArrayBuffer), so we must wrap its underlying buffer using byteOffset/byteLength rather than passing
-		// the Buffer directly to DataView.
-		var dataView		=new DataView(data.buffer,data.byteOffset,data.byteLength);
+		// ReceiveAcknowledgement is reached from two transports with different argument shapes:
+		//   - WebRTC data channels (receivedMessageReliable / receivedMessageUnreliable) deliver
+		//     event.data as a raw ArrayBuffer; ArrayBuffer.isView(data) is false and data.buffer
+		//     is undefined, so we must construct the DataView from `data` directly.
+		//   - The WebSocket signaling fallback (receiveReliableBinaryMessage) delivers a Node
+		//     Buffer, which is a Uint8Array view over a pooled ArrayBuffer; we must wrap its
+		//     backing buffer using byteOffset/byteLength so we don't read pool neighbours.
+		var dataView		=ArrayBuffer.isView(data)
+			?new DataView(data.buffer,data.byteOffset,data.byteLength)
+			:new DataView(data,0,data.byteLength);
 		core.decodeFromDataView(msg,dataView,0);
 		if(msg.uint64_ackId==this.currentOriginState.ackId)
 		{

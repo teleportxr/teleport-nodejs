@@ -3,53 +3,59 @@ const core= require("../core/core.js");
 const command= require("./command");
 const node= require("../scene/node.js");
 
+// Mirrors core.decodeFromDataView so the two implementations stay in sync.
+// The previous version had four latent bugs that only escaped notice because
+// nothing imports this function (every real caller uses core.decodeFromDataView):
+//   1. `Object.entries[key]=value` assigned a property on the `Object.entries`
+//      *function object* itself instead of writing back to `obj`, so decoded
+//      fields were silently dropped on the floor.
+//   2. The multi-byte getters were called without an endian argument, defaulting
+//      to big-endian and disagreeing with the writer's little-endian output.
+//   3. The "struct" branch referenced an undefined `value` local; the recursion
+//      would have thrown immediately had it ever been reached.
+//   4. `SizeOfType` was referenced bare but is not imported into this file —
+//      only the `core` namespace is — so the very first iteration would have
+//      thrown ReferenceError.
 function decodeFromDataView(obj,dataView,byteOffset){
-    for (let key of Object.keys(obj)) {
+    for (let [key, sub_obj] of Object.entries(obj)) {
         let first_underscore=key.search('_');
         var name=key.substring(first_underscore+1,key.end);
         var type=key.substring(0,first_underscore);
-        var [sz,tp]=SizeOfType(type);
+        var [sz,tp]=core.SizeOfType(type);
         if(tp=="uint8")
         {
-            var value=dataView.getUint8(byteOffset);
-            Object.entries[key]=value;
+            obj[key]=dataView.getUint8(byteOffset);
         }
         else if(tp=="int8")
         {
-            var value=dataView.getInt8(byteOffset);
-            Object.entries[key]=value;
+            obj[key]=dataView.getInt8(byteOffset);
         }
         else if(tp=="uint32")
         {
-            var value=dataView.getUint32(byteOffset);
-            Object.entries[key]=value;
+            obj[key]=dataView.getUint32(byteOffset,core.endian);
         }
         else if(tp=="int32")
         {
-            var value=dataView.getInt32(byteOffset);
-            Object.entries[key]=value;
+            obj[key]=dataView.getInt32(byteOffset,core.endian);
         }
         else if(tp=="float32")
         {
-            var value=dataView.getFloat32(byteOffset);
-            Object.entries[key]=value;
+            obj[key]=dataView.getFloat32(byteOffset,core.endian);
         }
         else if(tp=="int64")
         {
-            var value=dataView.getBigInt64(byteOffset);
-            Object.entries[key]=value;
+            obj[key]=dataView.getBigInt64(byteOffset,core.endian);
         }
         else if(tp=="uint64")
         {
-            var value=dataView.getBigUint64(byteOffset);
-            Object.entries[key]=value;
+            obj[key]=dataView.getBigUint64(byteOffset,core.endian);
         }
         else if(tp=="struct")
         {
-            sz=decodeFromDataView(value,dataView,byteOffset)-byteOffset;
+            sz=decodeFromDataView(sub_obj,dataView,byteOffset)-byteOffset;
         }
         byteOffset+=sz;
-        console.log(byteOffset+": "+sz+" bytes\t\t"+tp+" "+name+" "+value.toString());
+        console.log(byteOffset+": "+sz+" bytes\t\t"+tp+" "+name+" "+obj[key]);
     }
     return byteOffset;
 }
