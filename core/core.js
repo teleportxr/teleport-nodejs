@@ -142,7 +142,7 @@ function decodeFromDataView(obj, dataView, byteOffset) {
 			throw new Error("Can't find size of " + key);
 		}
 		byteOffset += sz;
-		console.log(byteOffset + ": " + sz + " bytes\t\t" + tp + " " + name + " " + sub_obj.toString());
+		console.log(byteOffset + ": " + sz + " bytes\t\t" + tp + " " + name + " " + (obj[key] !== undefined ? obj[key] : sub_obj));
 	}
 	console.log("Total size: " + byteOffset + "\n");
 	return byteOffset;
