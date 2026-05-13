@@ -384,14 +384,17 @@ class WebRtcConnection extends EventEmitter
 	// otherwise a dropped send leaves the resource marked Sent and it won't be
 	// retried until geometry_service.timeout_us elapses (default 10 s).
 	sendGeometry(buffer) {
-		if (!this.isGeometryOpen())
+		if (!this.isGeometryOpen()) {
+			console.warn('sendGeometry called but geometry channel not open (readyState='+
+				(this.geometryDataChannel ? this.geometryDataChannel.readyState : 'null')+')');
 			return false;
+		}
 		try {
 			this.geometryDataChannel.send(buffer);
 			return true;
 		}
 		catch(exception) {
-			console.error('datachannel.sendGeometry exception: '+exception.message);
+			console.error('sendGeometry exception: '+exception.message);
 			return false;
 		}
 	}

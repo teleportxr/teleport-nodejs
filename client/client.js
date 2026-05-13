@@ -515,8 +515,10 @@ class Client {
 			// the next UpdateStreaming tick without waiting for the timeout.
 			return;
 		}
-		console.log("Sending node "+uid+" "+node.name+" to Client "+this.clientID+", size: "+nodeSize+" bytes");
-		if(this.webRtcConnection.sendGeometry(view2))
+		const sendSuccess = this.webRtcConnection.sendGeometry(view2);
+		console.log("Sending node "+uid+" "+node.name+" to Client "+this.clientID+", size: "+nodeSize+" bytes — "+
+			(sendSuccess ? "OK" : "FAILED"));
+		if(sendSuccess)
 			this.geometryService.EncodedResource(uid);
 	}
 	SendGenericResource(uid)
@@ -542,8 +544,10 @@ class Client {
 			// the next UpdateStreaming tick without waiting for the timeout.
 			return;
 		}
-		console.log("Sending resource "+uid+" "+resource.url+" to Client "+this.clientID+", size: "+resourceSize+" bytes");
-		if(this.webRtcConnection.sendGeometry(view2))
+		const sendSuccess = this.webRtcConnection.sendGeometry(view2);
+		console.log("Sending resource "+uid+" "+resource.url+" to Client "+this.clientID+", size: "+resourceSize+" bytes — "+
+			(sendSuccess ? "OK" : "FAILED"));
+		if(sendSuccess)
 			this.geometryService.EncodedResource(uid);
 	}
 	SendMesh(uid)
