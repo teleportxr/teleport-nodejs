@@ -274,6 +274,7 @@ class Client {
 	// Generic message acknowledgement. Certain kinds of message are expected to be ack'ed.
 	ReceiveAcknowledgement(data)
 	{
+		console.log("ReceiveAcknowledgement called with " + data.byteLength + " bytes");
 		if (data.byteLength!=message.AcknowledgementMessage.sizeof())
 		{
 			console.log("Client: Received malformed AcknowledgementMessage packet of length: ",data.length);
@@ -291,13 +292,16 @@ class Client {
 			?new DataView(data.buffer,data.byteOffset,data.byteLength)
 			:new DataView(data,0,data.byteLength);
 		core.decodeFromDataView(msg,dataView,0);
+		console.log("ReceiveAcknowledgement decoded ack_id="+msg.uint64_ackId+", waiting for origin="+this.currentOriginState.ackId+", lighting="+this.currentLightingState.ackId);
 		if(msg.uint64_ackId==this.currentOriginState.ackId)
 		{
+			console.log("ReceiveAcknowledgement: acknowledged SetOriginNodeCommand");
 			this.currentOriginState.acknowledged=true;
 			this.currentOriginState.resendCount=0;
 		}
 		if(msg.uint64_ackId==this.currentLightingState.ackId)
 		{
+			console.log("ReceiveAcknowledgement: acknowledged SetLightingCommand");
 			this.currentLightingState.acknowledged=true;
 			this.currentLightingState.resendCount=0;
 		}
