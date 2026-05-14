@@ -16,6 +16,11 @@ const { BackgroundMode } = require("../core/core.js");
 // gives roughly MAX_ACK_RESENDS*3 seconds before we stop trying.
 const MAX_ACK_RESENDS = 5;
 
+// Timeout in milliseconds for WebRTC connection establishment.
+// Clients that don't establish WebRTC within this time will be disconnected.
+// Configurable via WEBRTC_CONNECT_TIMEOUT_MS environment variable.
+const WEBRTC_CONNECT_TIMEOUT_MS = parseInt(process.env.WEBRTC_CONNECT_TIMEOUT_MS || '10000', 10);
+
 class OriginState
 {
     constructor() {
@@ -56,12 +61,25 @@ class Client {
 		this.next_ack_id=BigInt(1);
 		this.clientStartMs=Date.now();
 		this.webRtcConnectedAtMs=0;
+		this.webRtcConnectionInitiatedAtMs=0; // Track when WebRTC connection attempt started
     }
 	elapsedMsSinceStart(){
 		return Date.now()-this.clientStartMs;
 	}
 	elapsedMsSinceConnected(){
 		return this.webRtcConnectedAtMs?Date.now()-this.webRtcConnectedAtMs:-1;
+	}
+	hasWebRtcConnectionTimedOut(){
+		// If WebRTC isn't connected yet and we initiated the connection attempt,
+		// check if we've exceeded the timeout
+		if(!this.webRtcConnected && this.webRtcConnectionInitiatedAtMs > 0) {
+			const elapsedMs = Date.now() - this.webRtcConnectionInitiatedAtMs;
+			if(elapsedMs > WEBRTC_CONNECT_TIMEOUT_MS) {
+				console.log("[T+"+this.elapsedMsSinceStart()+"ms] WebRTC connection timeout for client "+this.clientID+" ("+elapsedMs+"ms > "+WEBRTC_CONNECT_TIMEOUT_MS+"ms)");
+				return true;
+			}
+		}
+		return false;
 	}
 	tick(timestamp){
 		this.geometryService.GetNodesToSend();
@@ -250,6 +268,7 @@ class Client {
     StartStreaming()
     {
 		console.log("[T+"+this.elapsedMsSinceStart()+"ms] Client.StartStreaming() — creating WebRTC connection for client "+this.clientID);
+		this.webRtcConnectionInitiatedAtMs=Date.now(); // Record when we started trying to establish WebRTC
 		this.webRtcConnectionManager=WebRtcConnectionManager.getInstance();
         // We make sure WebRTC has a connection for this client.
   		this.webRtcConnection = this.webRtcConnectionManager.createConnection(

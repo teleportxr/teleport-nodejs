@@ -29,8 +29,26 @@ class ClientManager
 			clearInterval(this.geometryIntervalId);
 	}
 	UpdateStreaming() {
+		// Track clients to remove due to timeout (can't modify Map during iteration)
+		const clientsToRemove = [];
+
 		for (let [cl_id,cl] of this.clients) {
-			cl.UpdateStreaming();
+			// Check if this client's WebRTC connection has timed out
+			if(cl.hasWebRtcConnectionTimedOut()) {
+				clientsToRemove.push(cl_id);
+			} else {
+				cl.UpdateStreaming();
+			}
+		}
+
+		// Remove clients that timed out
+		for (const cl_id of clientsToRemove) {
+			console.log("Removing client "+cl_id+" due to WebRTC connection timeout");
+			const cl = this.clients.get(cl_id);
+			if(cl) {
+				cl.StopStreaming();
+			}
+			this.RemoveClient(cl_id);
 		}
 	}
     GetOrCreateClient(clientID)
