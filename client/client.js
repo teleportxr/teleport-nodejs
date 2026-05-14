@@ -544,7 +544,7 @@ class Client {
 			return;
 		}
 		const sendSuccess = this.webRtcConnection.sendGeometry(view2);
-		console.log("Sending node "+uid+" "+node.name+" to Client "+this.clientID+", size: "+nodeSize+" bytes — "+
+		console.log("[T+"+this.elapsedMsSinceStart()+"ms, conn+"+this.elapsedMsSinceConnected()+"ms] Sending node "+uid+" "+node.name+" to Client "+this.clientID+", size: "+nodeSize+" bytes — "+
 			(sendSuccess ? "OK" : "FAILED"));
 		if(sendSuccess)
 			this.geometryService.EncodedResource(uid);
@@ -573,7 +573,7 @@ class Client {
 			return;
 		}
 		const sendSuccess = this.webRtcConnection.sendGeometry(view2);
-		console.log("Sending resource "+uid+" "+resource.url+" to Client "+this.clientID+", size: "+resourceSize+" bytes — "+
+		console.log("[T+"+this.elapsedMsSinceStart()+"ms, conn+"+this.elapsedMsSinceConnected()+"ms] Sending resource "+uid+" "+resource.url+" to Client "+this.clientID+", size: "+resourceSize+" bytes — "+
 			(sendSuccess ? "OK" : "FAILED"));
 		if(sendSuccess)
 			this.geometryService.EncodedResource(uid);
