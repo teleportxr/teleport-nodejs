@@ -58,6 +58,43 @@ test('hasWebRtcConnectionTimedOut returns true when over timeout', async () => {
 	assert.strictEqual(c.hasWebRtcConnectionTimedOut(), true);
 });
 
+test('Client.StopStreaming clears webRtcConnected flags', () => {
+	// Simulate a connected client whose underlying connection is being torn down.
+	const c = makeStubClient({ clientID: 99 });
+	c.webRtcConnected = true;
+	c.webRtcConnectedAtMs = Date.now() - 5000;
+	c.webRtcConnectionInitiatedAtMs = Date.now() - 6000;
+	c.webRtcConnection = {};
+	c.webRtcConnectionManager = { destroyConnection: () => {} };
+
+	// Call the real StopStreaming from the prototype.
+	Client.prototype.StopStreaming.call(c);
+
+	assert.strictEqual(c.webRtcConnected, false, 'webRtcConnected must be false after StopStreaming');
+	assert.strictEqual(c.webRtcConnectedAtMs, 0, 'webRtcConnectedAtMs must be reset');
+	assert.strictEqual(c.webRtcConnectionInitiatedAtMs, 0, 'webRtcConnectionInitiatedAtMs must be reset');
+	assert.strictEqual(c.webRtcConnection, null, 'webRtcConnection must be null');
+});
+
+test('ClientManager.disconnectClient removes client from map', () => {
+	const cm = new ClientManager();
+	const stopStreamingCalled = [];
+
+	const c = makeStubClient({ clientID: 42 });
+	// Replace StopStreaming so we can track it and exercise the real path.
+	c.webRtcConnectionManager = null;
+	// Bind real StopStreaming but track the call.
+	const realStop = Client.prototype.StopStreaming.bind(c);
+	c.StopStreaming = () => { stopStreamingCalled.push(42); realStop(); };
+
+	cm.clients.set(42, c);
+
+	cm.disconnectClient(42);
+
+	assert.deepStrictEqual(stopStreamingCalled, [42], 'StopStreaming must be called');
+	assert.strictEqual(cm.clients.has(42), false, 'client must be removed from the map');
+});
+
 test('ClientManager.UpdateStreaming removes timed-out clients', async () => {
 	const cm = new ClientManager();
 	const clientsRemoved = [];

@@ -289,6 +289,11 @@ class Client {
 			this.webRtcConnectionManager.destroyConnection(this.clientID);
 		this.webRtcConnection=null;
 		this.webRtcConnectionManager=null;
+		// Clear connected state so UpdateStreaming stops iterating and the
+		// timeout reaper can handle removal if the client is still in the map.
+		this.webRtcConnected=false;
+		this.webRtcConnectedAtMs=0;
+		this.webRtcConnectionInitiatedAtMs=0;
 	}
 	// Generic message acknowledgement. Certain kinds of message are expected to be ack'ed.
 	ReceiveAcknowledgement(data)
@@ -529,7 +534,7 @@ class Client {
 		const view2 = new DataView(buffer, 0, nodeSize);
 		if(!this.webRtcConnection)
 		{
-			console.error("this.webRtcConnection is null");
+			console.error("Client "+this.clientID+", SendNode "+uid+": this.webRtcConnection is null");
 			return;
 		}
 		if(!this.webRtcConnection.isGeometryOpen())

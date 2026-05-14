@@ -116,11 +116,11 @@ class ClientManager
 		return c;
 	}
 	disconnectClient(clientID) {
-		// then we tell the client manager to start this client.
 		var c=this.GetClient(clientID);
 		if(!c)
 			return;
 		c.StopStreaming();
+		this.RemoveClient(clientID);
 	}
 	writeState() {
 		var content="<table><tr><th>Client Id</th><th>IP Address</th><th>Signalling State</th></tr>";
