@@ -369,7 +369,7 @@ class Client {
 			return;
 		if(!this.webRtcConnected)
 			return;
-		console.log("[T+"+this.elapsedMsSinceStart()+"ms, conn+"+this.elapsedMsSinceConnected()+"ms] UpdateStreaming tick for client "+this.clientID);
+		//console.log("[T+"+this.elapsedMsSinceStart()+"ms, conn+"+this.elapsedMsSinceConnected()+"ms] UpdateStreaming tick for client "+this.clientID);
 		var timestamp=core.getTimestampUs();
 		// Establish which nodes the client should have, and their resources.
 		// Then: which resources we think it does not yet have. Send those.
