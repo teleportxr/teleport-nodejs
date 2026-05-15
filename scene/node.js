@@ -267,12 +267,12 @@ class Node {
 		this.components.push(m);
 	}
 	setCanvasComponent(canvas_path) {
-		this. components.forEach((component) => {
+		this.components.forEach((component) => {
 			if (component.getType() == NodeDataType.TextCanvas) {
 				component.canvasPath = canvas_path;
 				component.data_uid = resources.GetResourceUidFromUrl(
-					core.GeometryPayloadType.FontAtlas,
-					canvas_name
+					core.GeometryPayloadType.TextCanvas,
+					canvas_path
 				);
 				return;
 			}
@@ -280,7 +280,7 @@ class Node {
 		var tc = new TextCanvasComponent();
 		tc.canvasPath = canvas_path;
 		tc.data_uid = resources.GetResourceUidFromUrl(
-			core.GeometryPayloadType.FontAtlas,
+			core.GeometryPayloadType.TextCanvas,
 			canvas_path
 		);
 		this.components.push(tc);
