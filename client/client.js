@@ -305,7 +305,7 @@ class Client {
 			return;
 		}
         var msg				=new message.AcknowledgementMessage();
-		// ReceiveAcknowledgement is reached from two transports with different argument shapes:
+		// ReceiveAcknowledgement can be reached from THREE transports with different argument shapes:
 		//   - WebRTC data channels (receivedMessageReliable / receivedMessageUnreliable) deliver
 		//     event.data as a raw ArrayBuffer; ArrayBuffer.isView(data) is false and data.buffer
 		//     is undefined, so we must construct the DataView from `data` directly.

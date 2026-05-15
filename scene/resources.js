@@ -180,6 +180,7 @@ function GetResourceUidFromUrl(type, url) {
 		var uid = Resource.pathToUid.get(url);
 		return uid;
 	}
+	console.error("GetResourceUidFromUrl, could not find resource uid for " + url);
 	return 0;
 }
 
