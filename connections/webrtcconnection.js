@@ -121,6 +121,10 @@ class WebRtcConnection extends EventEmitter
 			this.peerConnection = null;
 		}
 		this.peerConnection		=new DefaultRTCPeerConnection({ sdpSemantics: 'unified-plan', iceServers: this.iceServers, iceTransportPolicy: this.iceTransportPolicy});
+		// New PeerConnection means new data channels — the "all channels open"
+		// callback must be allowed to fire again. Without this reset the latch from
+		// the previous PeerConnection's lifetime suppresses UpdateStreaming kick.
+		this._dataChannelsOpenFired = false;
 		this.beforeOffer();
 		this.connectionTimer = this.options.setTimeout(() =>
 		{

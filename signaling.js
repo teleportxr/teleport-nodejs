@@ -133,14 +133,20 @@ function processInitialRequest(clientID, signalingClient, content) {
 		// Apparently the CLIENT thinks they've disconnected.
 		// The client might, as far as we know, have lost the information it needs to continue the connection.
 		// Therefore we should resend everything required.
-		//signalingClient.ChangeSignalingState(SignalingState.STREAMING);
 		console.log(
 			"Warning: Client " +
 				clientID +
 				" reconnected, but we didn't know we'd lost them."
 		);
-		// It may be just that the connection request was already in flight when we accepted its predecessor.
-		//sendResponseToClient(clientID);
+		// Tear down any stale Client + WebRtcConnection from the previous incarnation.
+		// Without this the next handshake's StartStreaming() races against the old
+		// peer connection's still-open data channels, and the reliable channel the
+		// server publishes commands to ends up being the wrong one — Origin/Lighting
+		// acks never come back and the server eventually gives up.
+		disconnectClient(clientID);
+		if (webRtcConnectionManager)
+			webRtcConnectionManager.destroyConnection(clientID);
+		signalingClient.ChangeSignalingState(SignalingState.START);
 		startStreaming(signalingClient);
 		return;
 	}
