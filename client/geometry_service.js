@@ -211,6 +211,10 @@ class GeometryService {
 						fontAtlas.font_texture_uid,
 						diff
 					);
+			} else
+				{
+			
+				console.error("Text Canvas ", canvasComponent.data_uid, " has font atlas 0");
 			}
 		}
 	}
