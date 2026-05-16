@@ -129,25 +129,18 @@ function processInitialRequest(clientID, signalingClient, content) {
 	// if signalingState is START, we should not have a client...
 	if (signalingClient.signalingState==SignalingState.ACCEPTED||signalingClient.signalingState==SignalingState.STREAMING)
 	{
-		// ok, we've received a connection request from a client that WE think we already have.
-		// Apparently the CLIENT thinks they've disconnected.
-		// The client might, as far as we know, have lost the information it needs to continue the connection.
-		// Therefore we should resend everything required.
+		// The client sent us another "connect" while we already hold an active
+		// session for them — most likely the client's discovery loop ticked again
+		// before the client's connection-status guard kicked in. Respond
+		// idempotently: re-send the connect-response so the client knows we still
+		// recognise it, and do nothing else. Do NOT tear down the Client /
+		// WebRtcConnection, and do NOT re-run startStreaming — both would destroy
+		// the live transport (in particular leaving SetOriginNodeCommand /
+		// SetLightingCommand without a reliable data channel to be acked on).
 		console.log(
-			"Warning: Client " +
-				clientID +
-				" reconnected, but we didn't know we'd lost them."
+			"Warning: Client " + clientID + " sent another connect; resending connect-response."
 		);
-		// Tear down any stale Client + WebRtcConnection from the previous incarnation.
-		// Without this the next handshake's StartStreaming() races against the old
-		// peer connection's still-open data channels, and the reliable channel the
-		// server publishes commands to ends up being the wrong one — Origin/Lighting
-		// acks never come back and the server eventually gives up.
-		disconnectClient(clientID);
-		if (webRtcConnectionManager)
-			webRtcConnectionManager.destroyConnection(clientID);
-		signalingClient.ChangeSignalingState(SignalingState.START);
-		startStreaming(signalingClient);
+		sendResponseToClient(clientID);
 		return;
 	}
 	if (signalingClient.signalingState==SignalingState.REQUESTED)
