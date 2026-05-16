@@ -209,6 +209,7 @@ class TextCanvasComponent extends Component
 		return NodeDataType.TextCanvas;
 	}
 	encodeIntoDataView(dataView,byteOffset) {
+		console.log("Encoding TextCanvasComponent: canvasPath=" + this.canvasPath + ", data_uid=" + this.data_uid);
 		byteOffset=core.put_uint8(dataView,byteOffset,NodeDataType.TextCanvas);
 		byteOffset=core.put_uint64(dataView,byteOffset,this.data_uid);
 		return byteOffset;
@@ -314,6 +315,9 @@ class Node {
 			this.components.length
 		);
 		for (var i = 0; i < this.components.length; i++) {
+			if (this.components[i].getType() == NodeDataType.TextCanvas) {
+				console.log("Encoding node '" + this.name + "' (uid=" + this.uid + ") TextCanvas component[" + i + "]");
+			}
 			byteOffset = this.components[i].encodeIntoDataView(
 				dataView,
 				byteOffset
