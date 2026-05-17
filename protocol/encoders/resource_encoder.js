@@ -21,9 +21,10 @@ function EncodeResource(res,buffer)
 	var t=res.encodeIntoDataView(dataView,byteOffset);
 	byteOffset=t;
 	t-=8;
-	// Actual size is now known so update payload size
-	// The value to send is the offset minus the 8 bytes for the size we have at the front.
-	dataView.setBigUint64(0,BigInt(t));
+	// Actual size is now known: write the count of bytes that follow the
+	// size field, in little-endian (the protocol convention). Without the
+	// explicit core.endian flag DataView defaults to big-endian.
+	dataView.setBigUint64(0,BigInt(t),core.endian);
 	return byteOffset;
 }
 module.exports= {EncodeResource};

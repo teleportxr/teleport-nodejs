@@ -21,8 +21,10 @@ function encodeNode(node,buffer)
 
 	var t=node.encodeIntoDataView(dataView,byteOffset);
 	byteOffset=t;
-	// Actual size is now known so update payload size
-	dataView.setBigUint64(0,BigInt(byteOffset));
+	// Actual size is now known: write the count of bytes that follow the
+	// size field, in little-endian (the protocol convention). Without the
+	// explicit core.endian flag DataView defaults to big-endian.
+	dataView.setBigUint64(0,BigInt(byteOffset-8),core.endian);
 	return byteOffset;
 }
 module.exports= {encodeNode};
