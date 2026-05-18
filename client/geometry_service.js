@@ -126,6 +126,7 @@ class GeometryService {
 		// MAY not be in this set:
 		this.streamedNodes.delete(uid);
 		// TODO: now reduce the counts for all the dependent resources.
+		console.log("Unstreaming node ", node_uid," for client ", this.clientID);
 	}
 	StreamOrUnstream(resourceMap, uid, diff) {
 		// exclude "undefined"
@@ -256,11 +257,11 @@ class GeometryService {
 
 		var node = this.scene.GetNode(node_uid);
 		if(diff>0 && !already_present)
-			console.log("Adding node ", node.name, " for client ", this.clientID);
+			console.log("Adding node ", node.name," (", node_uid,") for client ", this.clientID);
 		else if(diff<0 && already_present)
-			console.log("Removing node ", node.name, " for client ", this.clientID);
+			console.log("Removing node ", node.name," (", node_uid,") for client ", this.clientID);
 		else
-			console.log("Changing node ", node.name, " count from ", old_count, " to ", old_count+diff, " for client ", this.clientID);
+			console.log("Changing node ", node.name," (", node_uid,") count from ", old_count, " to ", old_count+diff, " for client ", this.clientID);
 		this.streamedNodes.set(node_uid, old_count + diff);
 		var meshResources = [];
 		node.components.forEach((component) => {
