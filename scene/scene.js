@@ -52,6 +52,21 @@ class Scene {
 		let node_uids = Array.from(this.nodes.keys());
 		return node_uids;
 	}
+	// Returns [{ nodeUid, url, loop, gain }] for every SoundComponent in the scene.
+	// Sound components are server-side only and never appear in the encoded node payload.
+	GetSoundComponents() {
+		const out = [];
+		for (const [uid, node] of this.nodes) {
+			if (!node.soundComponents || node.soundComponents.length === 0) continue;
+			for (const sc of node.soundComponents) {
+				out.push({ nodeUid: uid, url: sc.url, loop: sc.loop, gain: sc.gain });
+			}
+		}
+		return out;
+	}
+	GetPublicPath() {
+		return this.publicPath;
+	}
 	LoadFontAtlas(res, filename) {
 		const data = fs.readFileSync(filename, "utf8");
 		const jfa = JSON.parse(data);
@@ -251,6 +266,10 @@ class Scene {
 						{
 							var canvas=c.url;
 							n.setCanvasComponent(canvas);
+						}
+						if (c["type"] == "sound")
+						{
+							n.setSoundComponent(c["url"]);
 						}
 					}
 				}

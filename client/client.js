@@ -99,10 +99,21 @@ class Client {
 			// channels are in 'open' state yet; sends issued now will throw
 			// InvalidStateError. Instead, UpdateStreaming is triggered from the
 			// dataChannelsOpen callback registered in StartStreaming().
+			// Begin streaming scene SoundComponents (server-side audio) over the
+			// outbound media track. Safe even if no sound components are present.
+			if (this.webRtcConnection && this.scene)
+			{
+				try { this.webRtcConnection.startSceneAudio(this.scene); }
+				catch (e) { console.error("startSceneAudio threw: "+e.message); }
+			}
 		}
 		else
 		{
 			this.webRtcConnected=false;
+			if (this.webRtcConnection)
+			{
+				try { this.webRtcConnection.stopSceneAudio(); } catch (e) {}
+			}
 		}
     }
 	// Invoked once per WebRTC connection, the moment both reliable and geometry

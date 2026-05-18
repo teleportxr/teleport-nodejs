@@ -227,6 +227,19 @@ class SkeletonComponent extends Component
 	}
 };
 
+// Server-side only. Sound components reference an audio asset on the server
+// and are streamed via the WebRTC audio media track; they are never encoded
+// into the scene-graph payload sent to clients.
+class SoundComponent
+{
+	constructor(url = "")
+	{
+		this.url = url;
+		this.loop = true;
+		this.gain = 1.0;
+	}
+};
+
 class Node {
 	constructor( name = "") {
 		this.uid = core.generateUid();
@@ -240,6 +253,9 @@ class Node {
 		this.priority = 0;
 
 		this.components = [];
+		// Server-side only audio sources attached to this node. Not encoded
+		// into the wire payload; consumed by SceneAudioStreamer.
+		this.soundComponents = [];
 	}
 	static sizeof() {
 		return 8 + 24 + Pose.size + 8;
@@ -266,6 +282,12 @@ class Node {
 			mesh_url
 		);
 		this.components.push(m);
+	}
+	setSoundComponent(url) {
+		for (const c of this.soundComponents) {
+			if (c.url === url) return;
+		}
+		this.soundComponents.push(new SoundComponent(url));
 	}
 	setCanvasComponent(canvas_path) {
 		this.components.forEach((component) => {
@@ -356,4 +378,4 @@ class Node {
 	}
 };
 
-module.exports = {NodeDataType,Pose,PoseDynamic,NodePoseDynamic, Node };
+module.exports = {NodeDataType,Pose,PoseDynamic,NodePoseDynamic, Node, SoundComponent };

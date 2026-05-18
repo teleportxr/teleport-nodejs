@@ -1,8 +1,10 @@
 'use strict';
 
 const EventEmitter = require('events');
+const path = require('path');
 const wrtc =require('@roamhq/wrtc');
 const DefaultRTCPeerConnection = require('@roamhq/wrtc').RTCPeerConnection;
+const sound = require('../scene/sound.js');
 
 const TIME_TO_CONNECTED = 30000;
 const TIME_TO_HOST_CANDIDATES = 3000;  // NOTE: Too long.
@@ -71,6 +73,8 @@ class WebRtcConnection extends EventEmitter
 		this._audioSource = null;
 		this._localAudioTrack = null;
 		this._audioSink = null;
+		this._sceneAudioStreamer = null;
+		this._sceneAudioInterval = null;
 
 
 		Object.defineProperties(this, {
@@ -486,6 +490,7 @@ class WebRtcConnection extends EventEmitter
         };
     }
     _teardownAudioMediaTrack() {
+        this.stopSceneAudio();
         if (this._audioSink) {
             try { this._audioSink.stop(); } catch (e) {}
             this._audioSink = null;
@@ -495,6 +500,63 @@ class WebRtcConnection extends EventEmitter
             this._localAudioTrack = null;
         }
         this._audioSource = null;
+    }
+    // Start streaming all SoundComponents in the given scene as a single mixed
+    // 48 kHz / mono / int16 PCM track via the outbound audio media track. Idempotent
+    // for a given scene; calling again replaces the active source set.
+    startSceneAudio(scene) {
+        if (!this._audioSource) {
+            console.warn('startSceneAudio: no audio source on this connection');
+            return;
+        }
+        if (!scene || typeof scene.GetSoundComponents !== 'function') {
+            return;
+        }
+        const components = scene.GetSoundComponents();
+        if (!components || components.length === 0) {
+            return;
+        }
+        if (!this._sceneAudioStreamer) {
+            this._sceneAudioStreamer = new sound.SceneAudioStreamer(this._audioSource);
+        } else {
+            this._sceneAudioStreamer.clear();
+        }
+        const publicPath = (typeof scene.GetPublicPath === 'function') ? scene.GetPublicPath() : 'http_resources';
+        let loaded = 0;
+        for (const c of components) {
+            if (!c.url) continue;
+            const rel = c.url.startsWith('/') ? c.url.slice(1) : c.url;
+            const filePath = path.join(publicPath, rel);
+            try {
+                const src = new sound.WavSource(filePath);
+                this._sceneAudioStreamer.addSource(c.url, src);
+                loaded++;
+            } catch (e) {
+                console.warn('startSceneAudio: failed to load '+filePath+': '+e.message);
+            }
+        }
+        if (loaded === 0) {
+            return;
+        }
+        if (this._sceneAudioInterval) {
+            this.options.clearTimeout(this._sceneAudioInterval); // not a timeout, but in case
+        }
+        // Drive a 10 ms tick. setInterval is sufficient: RTCAudioSource buffers
+        // internally, and a few ms of jitter is absorbed by the WebRTC jitter buffer.
+        this._sceneAudioInterval = setInterval(() => {
+            if (this._sceneAudioStreamer) this._sceneAudioStreamer.tick();
+        }, sound.FRAME_MS);
+        console.log('startSceneAudio: streaming '+loaded+' source(s) at '+sound.SAMPLE_RATE+' Hz mono');
+    }
+    stopSceneAudio() {
+        if (this._sceneAudioInterval) {
+            clearInterval(this._sceneAudioInterval);
+            this._sceneAudioInterval = null;
+        }
+        if (this._sceneAudioStreamer) {
+            this._sceneAudioStreamer.clear();
+            this._sceneAudioStreamer = null;
+        }
     }
       
 	receiveMessage(id,event)
