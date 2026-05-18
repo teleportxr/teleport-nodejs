@@ -91,6 +91,10 @@ class WebRtcConnectionManager
 		if (policy === 'all' || policy === 'relay')
 			this.options.iceTransportPolicy=policy;
 	}
+	SetAudioEchoTest(enabled)
+	{
+		this.options.audioEchoTest = !!enabled;
+	}
 }
 
 WebRtcConnectionManager.create = function create (options)

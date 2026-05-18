@@ -29,6 +29,8 @@ function initServer(signaling_port, options) {
 		webRtcConnectionManager.SetIceServers(options.iceServers);
 	if (options && options.iceTransportPolicy)
 		webRtcConnectionManager.SetIceTransportPolicy(options.iceTransportPolicy);
+	if (options && typeof options.audioEchoTest !== 'undefined')
+		webRtcConnectionManager.SetAudioEchoTest(options.audioEchoTest);
 	return signaling.init(serverID, webRtcConnectionManager,cm.newClient.bind(cm),cm.disconnectClient.bind(cm),signaling_port);
   }
   

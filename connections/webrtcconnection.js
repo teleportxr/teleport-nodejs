@@ -67,6 +67,10 @@ class WebRtcConnection extends EventEmitter
 		{
 			console.log("ICE candidate error: "+event.errorCode+" "+event.errorText+" "+event.port+" "+event.url);
 		};
+		this._onTrack = this._handleTrack.bind(this);
+		this._audioSource = null;
+		this._localAudioTrack = null;
+		this._audioSink = null;
 
 
 		Object.defineProperties(this, {
@@ -115,8 +119,10 @@ class WebRtcConnection extends EventEmitter
 			this.peerConnection.removeEventListener('icegatheringstatechange', this._onIceGatheringStateChange);
 			this.peerConnection.removeEventListener("icecandidateerror", this._onIceCandidateError);
 			this.peerConnection.removeEventListener("connectionstatechange", this._onConnectionStateChange);
+			this.peerConnection.removeEventListener('track', this._onTrack);
 			if (this.onIceCandidate)
 				this.peerConnection.removeEventListener('icecandidate', this.onIceCandidate);
+			this._teardownAudioMediaTrack();
 			try { this.peerConnection.close(); } catch (e) {}
 			this.peerConnection = null;
 		}
@@ -157,6 +163,7 @@ class WebRtcConnection extends EventEmitter
 		this.peerConnection.addEventListener('icegatheringstatechange', this._onIceGatheringStateChange);
 		this.peerConnection.addEventListener("icecandidateerror", this._onIceCandidateError);
 		this.peerConnection.addEventListener("connectionstatechange", this._onConnectionStateChange);
+		this.peerConnection.addEventListener('track', this._onTrack);
 		// Attach the icecandidate listener here, before doOffer can call
 		// setLocalDescription(). libwebrtc starts the ICE agent inside
 		// setLocalDescription() and emits host candidates synchronously on
@@ -329,11 +336,13 @@ class WebRtcConnection extends EventEmitter
 			this.peerConnection.removeEventListener('icegatheringstatechange', this._onIceGatheringStateChange);
 			this.peerConnection.removeEventListener("icecandidateerror", this._onIceCandidateError);
 			this.peerConnection.removeEventListener("connectionstatechange", this._onConnectionStateChange);
+			this.peerConnection.removeEventListener('track', this._onTrack);
 			if (this.onIceCandidate)
 			{
 				this.peerConnection.removeEventListener('icecandidate', this.onIceCandidate);
 			}
 		}
+		this._teardownAudioMediaTrack();
 		if (this.connectionTimer)
 		{
 			this.options.clearTimeout(this.connectionTimer);
@@ -415,20 +424,22 @@ class WebRtcConnection extends EventEmitter
 		}
 	}
     beforeOffer() {
-          
+
         this.videoDataChannel = this.createDataChannel("video",20);
         this.tagDataChannel = this.createDataChannel("video_tags",40);
         this.audioToClientDataChannel = this.createDataChannel("audio_server_to_client",60);
         this.geometryDataChannel = this.createDataChannel("geometry_unframed",80);
         this.reliableDataChannel = this.createDataChannel("reliable",100);
         this.unreliableDataChannel = this.createDataChannel("unreliable",120,false);
-      
+
+        this._setupAudioMediaTrack();
+
         function onMessage({ data }) {
           if (data === 'ping') {
             //dataChannel.send('pong');
           }
         }
-      
+
         // NOTE(mroberts): This is a hack so that we can get a callback when the
         // RTCPeerConnection is closed. In the future, we can subscribe to
         // "connectionstatechange" events.
@@ -439,6 +450,52 @@ class WebRtcConnection extends EventEmitter
           return close.apply(this, arguments);
         };
       }
+    // Adds one sendrecv audio transceiver per the protocol (see docs/protocol/audio.rst).
+    // Our outbound track is an RTCAudioSource so a future SFU can push selected peer
+    // PCM into it; incoming RTP is unwrapped via RTCAudioSink and surfaced as the
+    // 'micFrame' event. If options.audioEchoTest is set, received frames are looped
+    // straight back to the source, which lets a single browser tab self-test the path.
+    _setupAudioMediaTrack() {
+        try {
+            this._audioSource = new wrtc.nonstandard.RTCAudioSource();
+            this._localAudioTrack = this._audioSource.createTrack();
+            this.peerConnection.addTransceiver(this._localAudioTrack, { direction: 'sendrecv' });
+        } catch (e) {
+            console.error('_setupAudioMediaTrack failed: '+e.message);
+            this._teardownAudioMediaTrack();
+        }
+    }
+    _handleTrack(event) {
+        if (!event || !event.track || event.track.kind !== 'audio')
+            return;
+        if (this._audioSink) {
+            try { this._audioSink.stop(); } catch (e) {}
+            this._audioSink = null;
+        }
+        try {
+            this._audioSink = new wrtc.nonstandard.RTCAudioSink(event.track);
+        } catch (e) {
+            console.error('RTCAudioSink construction failed: '+e.message);
+            return;
+        }
+        this._audioSink.ondata = (data) => {
+            this.emit('micFrame', this.id, data);
+            if (this.options && this.options.audioEchoTest && this._audioSource) {
+                try { this._audioSource.onData(data); } catch (e) {}
+            }
+        };
+    }
+    _teardownAudioMediaTrack() {
+        if (this._audioSink) {
+            try { this._audioSink.stop(); } catch (e) {}
+            this._audioSink = null;
+        }
+        if (this._localAudioTrack) {
+            try { this._localAudioTrack.stop(); } catch (e) {}
+            this._localAudioTrack = null;
+        }
+        this._audioSource = null;
+    }
       
 	receiveMessage(id,event)
 	{
