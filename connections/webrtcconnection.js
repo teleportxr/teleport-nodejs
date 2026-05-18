@@ -539,12 +539,34 @@ class WebRtcConnection extends EventEmitter
             return;
         }
         if (this._sceneAudioInterval) {
-            this.options.clearTimeout(this._sceneAudioInterval); // not a timeout, but in case
+            clearInterval(this._sceneAudioInterval);
+            this._sceneAudioInterval = null;
         }
         // Drive a 10 ms tick. setInterval is sufficient: RTCAudioSource buffers
         // internally, and a few ms of jitter is absorbed by the WebRTC jitter buffer.
+        this._sceneAudioTickCount = 0;
         this._sceneAudioInterval = setInterval(() => {
-            if (this._sceneAudioStreamer) this._sceneAudioStreamer.tick();
+            if (!this._sceneAudioStreamer) return;
+            this._sceneAudioStreamer.tick();
+            this._sceneAudioTickCount++;
+            // Every ~5 s, log tick count + outbound RTP stats so we can confirm
+            // libwebrtc is actually transmitting audio packets.
+            if ((this._sceneAudioTickCount % 500) === 0) {
+                const n = this._sceneAudioTickCount;
+                if (typeof this.peerConnection.getStats === 'function') {
+                    Promise.resolve(this.peerConnection.getStats()).then((report) => {
+                        let summary = 'no outbound-rtp/audio stats';
+                        try {
+                            const entries = (typeof report.values === 'function') ? Array.from(report.values()) : Object.values(report);
+                            const outRtp = entries.find((s) => s && s.type === 'outbound-rtp' && (s.kind === 'audio' || s.mediaType === 'audio'));
+                            if (outRtp) summary = 'packetsSent='+outRtp.packetsSent+' bytesSent='+outRtp.bytesSent;
+                        } catch (e) { summary = 'stats parse error: '+e.message; }
+                        console.log('SceneAudioStreamer tick #'+n+' — '+summary);
+                    }).catch((e) => { console.log('SceneAudioStreamer tick #'+n+' — getStats failed: '+e.message); });
+                } else {
+                    console.log('SceneAudioStreamer tick #'+n+' — getStats unavailable');
+                }
+            }
         }, sound.FRAME_MS);
         console.log('startSceneAudio: streaming '+loaded+' source(s) at '+sound.SAMPLE_RATE+' Hz mono');
     }
