@@ -126,7 +126,7 @@ class GeometryService {
 		// MAY not be in this set:
 		this.streamedNodes.delete(uid);
 		// TODO: now reduce the counts for all the dependent resources.
-		console.log("Unstreaming node ", node_uid," for client ", this.clientID);
+		console.log("Unstreaming node ", uid," for client ", this.clientID);
 	}
 	StreamOrUnstream(resourceMap, uid, diff) {
 		// exclude "undefined"
