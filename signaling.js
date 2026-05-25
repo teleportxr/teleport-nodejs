@@ -4,6 +4,7 @@ const getcurrentline = require("get-current-line").default;
 // Importing the required modules
 const WebSocketServer = require("ws");
 const core = require("./core/core.js");
+const avatars = require("./protocol/avatars.js");
 
 class SignalingState {
 	static START = new SignalingState("Start");
@@ -22,7 +23,7 @@ class SignalingState {
 }
 var serverID=BigInt(0n);
 
-class SignalingClient { 
+class SignalingClient {
 	constructor(ip, ws, id) {
 		this.ip = ip;
 		this.ws = ws;
@@ -31,6 +32,15 @@ class SignalingClient {
 		this.signalingState = SignalingState.START;
 		this.clientID = id;
 		this.receiveReliableBinaryMessage=null;
+		// Handlers wired by the per-client Client when it is created
+		// (see ClientManager.newClient). Avatar negotiation messages are
+		// JSON text frames so they cannot share the WebRTC binary path.
+		this.handleAvatarOffer=null;
+		this.handleAvatarRevoke=null;
+		// Session-level capabilities advertised by the client in its
+		// `connect` message. Defaults to all-false so that an older
+		// client which omits the field is treated conservatively.
+		this.capabilities = { avatar_relay: false };
 	}
 	ChangeSignalingState(newState) {
 		console.log(
@@ -80,6 +90,11 @@ function processDisconnection(clientID,signalingClient){
 	signalingClients.delete(clientID);
 }
 function processInitialRequest(clientID, signalingClient, content) {
+	// Free-form capability bag: a missing / malformed object leaves
+	// capabilities at their default (all-false) state.
+	if (content && typeof content === 'object' && content.capabilities) {
+		signalingClient.capabilities = avatars.decodeCapabilities(content.capabilities);
+	}
 	var j_clientID = 0;
 	if (content.hasOwnProperty("clientID")) {
 		var j_clientID = content["clientID"];
@@ -162,6 +177,18 @@ function receiveWebSocketsMessage(clientID, signalingClient, txt) {
     {
         processDisconnection(clientID, signalingClient);
     }
+	else if (teleport_signal_type == avatars.TELEPORT_SIGNAL_TYPE_AVATAR_OFFER)
+	{
+		if (signalingClient.handleAvatarOffer)
+			signalingClient.handleAvatarOffer(message["content"]);
+		else
+			console.log("avatar-offer received for client " + clientID + " but no handler is wired.");
+	}
+	else if (teleport_signal_type == avatars.TELEPORT_SIGNAL_TYPE_AVATAR_REVOKE)
+	{
+		if (signalingClient.handleAvatarRevoke)
+			signalingClient.handleAvatarRevoke(message["content"]);
+	}
     else
     {
         var webRtcConnection = webRtcConnectionManager.getConnection(clientID);

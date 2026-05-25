@@ -111,6 +111,10 @@ class ClientManager
 		// then we tell the client manager to start this client.
 		var c=this.GetOrCreateClient(clientID);
 		signalingClient.receiveReliableBinaryMessage=c.receiveReliableBinaryMessage.bind(c);
+		// Route avatar-offer / avatar-revoke text frames to the per-client
+		// AvatarService. The signaling layer dispatches by message type.
+		signalingClient.handleAvatarOffer=c.avatarService.handleOffer.bind(c.avatarService);
+		signalingClient.handleAvatarRevoke=c.avatarService.handleRevoke.bind(c.avatarService);
 		//c.SetScene(this.scene);
 		c.Start();
 		return c;

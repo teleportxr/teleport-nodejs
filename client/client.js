@@ -4,6 +4,7 @@ const core= require("../core/core.js");
 const command= require("../protocol/command.js");
 const message= require("../protocol/message.js");
 const gs= require("./geometry_service.js");
+const avatar_service= require("./avatar_service.js");
 const node_encoder= require("../protocol/encoders/node_encoder.js");
 const resource_encoder= require("../protocol/encoders/resource_encoder.js");
 const WebRtcConnectionManager = require('../connections/webrtcconnectionmanager');
@@ -54,6 +55,9 @@ class Client {
         this.origin_uid=0;
         this.handshakeMessage=new message.HandshakeMessage();
 		this.geometryService=new gs.GeometryService(cid);
+		// Per-client avatar negotiation state. The host application drives
+		// when (and whether) policy is sent via this service.
+		this.avatarService=new avatar_service.AvatarService(cid, sigSend);
 		this.webRtcConnected=false;
 		this.webRtcConnection=null;
 		this.currentOriginState=new OriginState();
