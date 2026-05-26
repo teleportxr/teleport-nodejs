@@ -103,6 +103,81 @@ test('handleRevoke clears cached offer state without emitting anything', () => {
 	assert.strictEqual(svc.lastResult, null);
 });
 
+// Phase-3 integration: when a validator is wired in, the service runs
+// the offered URL through it and reports the verdict instead of always
+// falling back to using_default.
+
+function makeValidator(verdict) {
+	return { validate: async () => verdict };
+}
+
+test('handleOffer with validator: accepted result emits status=accepted', async () => {
+	const sink = makeSink();
+	const svc  = new avatar_service.AvatarService(42n, sink.send, {
+		validator: makeValidator({ ok: true, reasons: [], bytes: 100, contentHash: 'sha256:aa', format: 'glb' }),
+	});
+	svc.sendPolicy(new avatars.AvatarPolicy({ policy_id: 11n, default_available: true }));
+	sink.sent.length = 0;
+	await svc.handleOffer({ policy_id: 11, have_avatar: true, url: 'https://x/a.glb', declared: { format: 'glb' } });
+	const msg = sink.sent[sink.sent.length - 1];
+	assert.strictEqual(msg.content.status, 'accepted');
+	assert.strictEqual(msg.content.using_default, false);
+	assert.deepStrictEqual(msg.content.reasons, []);
+});
+
+test('handleOffer with validator: failure falls back to using_default when default_available', async () => {
+	const sink = makeSink();
+	const svc  = new avatar_service.AvatarService(42n, sink.send, {
+		validator: makeValidator({ ok: false, reasons: ['file_too_large'], bytes: 0, contentHash: '', format: '' }),
+	});
+	svc.sendPolicy(new avatars.AvatarPolicy({ policy_id: 12n, default_available: true }));
+	sink.sent.length = 0;
+	await svc.handleOffer({ policy_id: 12, have_avatar: true, url: 'https://x/big.glb', declared: { format: 'glb' } });
+	const msg = sink.sent[sink.sent.length - 1];
+	assert.strictEqual(msg.content.status, 'using_default');
+	assert.strictEqual(msg.content.using_default, true);
+	assert.deepStrictEqual(msg.content.reasons, ['file_too_large']);
+});
+
+test('handleOffer with validator: failure becomes rejected when default_available=false', async () => {
+	const sink = makeSink();
+	const svc  = new avatar_service.AvatarService(42n, sink.send, {
+		validator: makeValidator({ ok: false, reasons: ['ssrf_blocked'], bytes: 0, contentHash: '', format: '' }),
+	});
+	svc.sendPolicy(new avatars.AvatarPolicy({ policy_id: 13n, default_available: false }));
+	sink.sent.length = 0;
+	await svc.handleOffer({ policy_id: 13, have_avatar: true, url: 'https://x/local', declared: { format: 'glb' } });
+	const msg = sink.sent[sink.sent.length - 1];
+	assert.strictEqual(msg.content.status, 'rejected');
+	assert.deepStrictEqual(msg.content.reasons, ['ssrf_blocked']);
+});
+
+test('handleOffer with validator: have_avatar=false still replies using_default without calling validator', async () => {
+	const sink = makeSink();
+	let called = false;
+	const svc  = new avatar_service.AvatarService(42n, sink.send, {
+		validator: { validate: async () => { called = true; return { ok: true }; } },
+	});
+	svc.sendPolicy(new avatars.AvatarPolicy({ policy_id: 14n, default_available: true }));
+	sink.sent.length = 0;
+	await svc.handleOffer({ policy_id: 14, have_avatar: false });
+	assert.strictEqual(called, false);
+	assert.strictEqual(sink.sent[0].content.status, 'using_default');
+});
+
+test('handleOffer with validator: thrown validator error reports validator_error', async () => {
+	const sink = makeSink();
+	const svc  = new avatar_service.AvatarService(42n, sink.send, {
+		validator: { validate: async () => { throw new Error('boom'); } },
+	});
+	svc.sendPolicy(new avatars.AvatarPolicy({ policy_id: 15n, default_available: false }));
+	sink.sent.length = 0;
+	await svc.handleOffer({ policy_id: 15, have_avatar: true, url: 'https://x/a.glb', declared: { format: 'glb' } });
+	const msg = sink.sent[sink.sent.length - 1];
+	assert.strictEqual(msg.content.status, 'rejected');
+	assert.deepStrictEqual(msg.content.reasons, ['validator_error']);
+});
+
 test('signaling dispatch: avatar-offer routed to handleAvatarOffer', () => {
 	// Round-trip the dispatch path: build a SignalingClient stub, attach a
 	// handler, and feed it a JSON frame. Reaching into the module the same

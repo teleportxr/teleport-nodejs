@@ -33,6 +33,7 @@
     "./client/client": "./client/client.js",
     "./client/client_manager": "./client/client_manager.js",
     "./client/avatar_service": "./client/avatar_service.js",
+    "./client/avatar_validator": "./client/avatar_validator.js",
     "./connections/webrtcconnectionmanager": "./connections/webrtcconnectionmanager.js",
     "./protocol/avatars": "./protocol/avatars.js",
     "./scene/scene": "./scene/scene.js",
