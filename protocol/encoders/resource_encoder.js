@@ -13,12 +13,14 @@ function putPlaceholderSize(dataView)
 }
 
 // return the size of the encoded resource.
-function EncodeResource(res,buffer)
+// urlOverride, if supplied, is passed to the resource so it can encode a client-specific
+// url (e.g. an axes-standard cubemap variant) without mutating the shared resource.
+function EncodeResource(res,buffer,urlOverride)
 {
 	var byteOffset=0;
-	const dataView = new DataView(buffer); 
+	const dataView = new DataView(buffer);
 	byteOffset=putPlaceholderSize(dataView);
-	var t=res.encodeIntoDataView(dataView,byteOffset);
+	var t=res.encodeIntoDataView(dataView,byteOffset,urlOverride);
 	byteOffset=t;
 	t-=8;
 	// Actual size is now known: write the count of bytes that follow the

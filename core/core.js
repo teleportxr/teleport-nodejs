@@ -175,11 +175,30 @@ const AxesStandard =
 	LeftHanded: 2,
 	YVertical: 4,
 	ZVertical: 8,
-	EngineeringStyle: this.ZVertical | this.RightHanded,
-	GlStyle: 16 | this.YVertical | this.RightHanded,
-	UnrealStyle: 32 | this.ZVertical | this.LeftHanded,
-	UnityStyle: 64 | this.YVertical | this.LeftHanded,
+	// NB: these must be explicit literals, not `this.ZVertical | ...`. Inside an object
+	// literal `this` is the module scope, not the object, so the bitwise expressions would
+	// silently evaluate to the wrong values (e.g. EngineeringStyle=0, GlStyle=16). The wire
+	// protocol and clients use 9 and 21, so hard-code the resolved values to match.
+	EngineeringStyle: 8 | 1,	// ZVertical | RightHanded = 9
+	GlStyle: 16 | 4 | 1,		// 16 | YVertical | RightHanded = 21
+	UnrealStyle: 32 | 8 | 2,	// 32 | ZVertical | LeftHanded = 42
+	UnityStyle: 64 | 4 | 2,		// 64 | YVertical | LeftHanded = 70
 };
+
+//! Map a client's axes standard to the filename suffix used for the matching cubemap
+//! variant. e.g. GlStyle -> "ogl", so /envCloudyCubemap.ktx2 -> /envCloudyCubemap_ogl.ktx2.
+//! Returns "" for an unknown/uninitialised standard, meaning "serve the original file".
+function AxesStandardToCubemapSuffix(axesStandard)
+{
+	switch (axesStandard)
+	{
+		case AxesStandard.GlStyle:			return "ogl";
+		case AxesStandard.EngineeringStyle:	return "eng";
+		case AxesStandard.UnrealStyle:		return "unreal";
+		case AxesStandard.UnityStyle:		return "unity";
+		default:							return "";
+	}
+}
 
 const GeometryPayloadType =
 {
@@ -441,7 +460,7 @@ function put_string(dataView, byteOffset, name) {
 
 module.exports = {
 	UID_SIZE, endian, SizeOfType, encodeIntoDataView, decodeFromDataView
-	, vec4, BackgroundMode, AxesStandard, GeometryPayloadType, DisplayInfo, RenderingFeatures, LightingMode, VideoCodec
+	, vec4, BackgroundMode, AxesStandard, AxesStandardToCubemapSuffix, GeometryPayloadType, DisplayInfo, RenderingFeatures, LightingMode, VideoCodec
 	, VideoConfig, ClientDynamicLighting, encodeToUint8Array, decodeFromUint8Array
 	, generateUid, getStartTimeUnixUs, getTimestampUs,
 	unixTimeToUTCString, put_float32, put_uint16, put_int32, put_uint32

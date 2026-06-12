@@ -1,5 +1,7 @@
 'use strict';
 
+const fs= require("fs");
+const path= require("path");
 const core= require("../core/core.js");
 const command= require("../protocol/command.js");
 const message= require("../protocol/message.js");
@@ -54,6 +56,9 @@ class Client {
         this.clientID=cid;
         this.origin_uid=0;
         this.handshakeMessage=new message.HandshakeMessage();
+		// The client's axes standard, learned from its Handshake. Used to pick the matching
+		// cubemap variant to stream (e.g. GlStyle -> *_ogl.ktx2). NotInitialized until handshake.
+		this.clientAxesStandard=core.AxesStandard.NotInitialized;
 		this.geometryService=new gs.GeometryService(cid);
 		// Per-client avatar negotiation state. The host application drives
 		// when (and whether) policy is sent via this service.
@@ -564,6 +569,34 @@ class Client {
 		if(sendSuccess)
 			this.geometryService.EncodedResource(uid);
 	}
+	//! For a cubemap resource, return the URL of the variant matching this client's axes
+	//! standard (e.g. /envCloudyCubemap.ktx2 -> /envCloudyCubemap_ogl.ktx2). Returns undefined
+	//! to mean "use the resource's base url" — for non-cubemaps, unknown axes standards, or
+	//! when the variant file is missing under the public path (so streaming never breaks).
+	CubemapUrlForClient(resource)
+	{
+		if(!resource || !resource.isCubemap)
+			return undefined;
+		const suffix=core.AxesStandardToCubemapSuffix(this.clientAxesStandard);
+		if(!suffix)
+			return undefined;
+		const candidate=resources.InsertCubemapAxesSuffix(resource.url, suffix);
+		if(candidate===resource.url)
+			return undefined;
+		// Only serve the variant if it actually exists; otherwise fall back to the base file.
+		if(this.scene&&this.scene.publicPath)
+		{
+			// URLs are server-relative (e.g. "/envCloudyCubemap.ktx2"); strip any scheme/host.
+			const rel=candidate.replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^/]*/, "");
+			const full=path.join(this.scene.publicPath, rel);
+			if(!fs.existsSync(full))
+			{
+				console.warn("Cubemap variant "+full+" not found; serving base "+resource.url+" to client "+this.clientID);
+				return undefined;
+			}
+		}
+		return candidate;
+	}
 	SendGenericResource(uid)
 	{
 		var resource=resources.GetResourceFromUid(uid);
@@ -572,9 +605,10 @@ class Client {
 			console.warn("No resource of uid ",uid," was found.")
 			return;
 		}
+		const urlOverride=this.CubemapUrlForClient(resource);
 		const MAX_BUFFER_SIZE=resource.encodedSize();;
 		const buffer = new ArrayBuffer(MAX_BUFFER_SIZE);
-		const resourceSize=resource_encoder.EncodeResource(resource,buffer);
+		const resourceSize=resource_encoder.EncodeResource(resource,buffer,urlOverride);
 		const view2 = new DataView(buffer, 0, resourceSize);
 		if(!this.webRtcConnection)
 		{
@@ -588,7 +622,7 @@ class Client {
 			return;
 		}
 		const sendSuccess = this.webRtcConnection.sendGeometry(view2);
-		console.log("[T+"+this.elapsedMsSinceStart()+"ms, conn+"+this.elapsedMsSinceConnected()+"ms] Sending resource "+uid+" "+resource.url+" to Client "+this.clientID+", size: "+resourceSize+" bytes — "+
+		console.log("[T+"+this.elapsedMsSinceStart()+"ms, conn+"+this.elapsedMsSinceConnected()+"ms] Sending resource "+uid+" "+(urlOverride||resource.url)+" to Client "+this.clientID+", size: "+resourceSize+" bytes — "+
 			(sendSuccess ? "OK" : "FAILED"));
 		if(sendSuccess)
 			this.geometryService.EncodedResource(uid);
@@ -619,6 +653,10 @@ class Client {
         }
         var handshakeMessage=new message.HandshakeMessage();
 		core.decodeFromUint8Array(handshakeMessage,data);
+		// Remember the client's axes standard so cubemaps are streamed in the matching variant.
+		this.clientAxesStandard=handshakeMessage.AxesStandard_axesStandard;
+		console.log("Client "+this.clientID+" handshake axesStandard="+this.clientAxesStandard
+			+" (cubemap suffix '"+core.AxesStandardToCubemapSuffix(this.clientAxesStandard)+"')");
         const excess		=data.length-message.HandshakeMessage.sizeof();
         const numReceived	=excess/core.UID_SIZE;
         if(numReceived!=handshakeMessage.uint64_resourceCount) {

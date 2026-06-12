@@ -16,16 +16,21 @@ class Resource {
 		this.uid = uid;
 		this.url = url;
 		this.type = type;
+		// True for environment cubemaps (background/diffuse/specular). Such resources are
+		// served per-client in the variant matching the client's axes standard.
+		this.isCubemap = false;
 	}
 	encodedSize(){
 		return 500;
 	}
-	encodeIntoDataView(dataView, byteOffset) {
+	//! urlOverride, if supplied, replaces this.url for this encoding only (e.g. to send a
+	//! client-specific cubemap variant). The stored this.url is left untouched.
+	encodeIntoDataView(dataView, byteOffset, urlOverride) {
 		byteOffset = core.put_uint8(dataView, byteOffset, this.type);
 		byteOffset = core.put_uint64(dataView, byteOffset, this.uid);
-		var url = this.url;
-		if (this.url.search("://") == -1)
-			url = Resource.defaultPathRoot + this.url;
+		var url = urlOverride || this.url;
+		if (url.search("://") == -1)
+			url = Resource.defaultPathRoot + url;
 		byteOffset = core.put_string(dataView, byteOffset, url);
 		return byteOffset;
 	}
@@ -211,6 +216,28 @@ function GetOrAddTexture(url) {
 	return GetOrAddResourceFromUrl(core.GeometryPayloadType.TexturePointer, url);
 }
 
+//! Get or add a cubemap texture, flagging the resource so it is served per-client in the
+//! variant matching the client's axes standard. Returns the resource uid.
+function GetOrAddCubemap(url) {
+	const uid = GetOrAddTexture(url);
+	const res = GetResourceFromUid(uid);
+	if (res)
+		res.isCubemap = true;
+	return uid;
+}
+
+//! Insert an axes suffix before a cubemap URL's extension:
+//!   InsertCubemapAxesSuffix("/envCloudyCubemap.ktx2", "ogl") -> "/envCloudyCubemap_ogl.ktx2"
+//! Returns the url unchanged when the suffix is empty.
+function InsertCubemapAxesSuffix(url, suffix) {
+	if (!suffix || !url)
+		return url;
+	const dot = url.lastIndexOf(".");
+	if (dot < 0)
+		return url + "_" + suffix;
+	return url.substring(0, dot) + "_" + suffix + url.substring(dot);
+}
+
 //! Get or add the mesh url as a resource.
 function GetOrAddMesh(url) {
 	return GetOrAddResourceFromUrl(core.GeometryPayloadType.MeshPointer, url);
@@ -238,6 +265,8 @@ module.exports = {
 	GetOrAddResourceUidFromUrl,
 	GetResourceFromUid,
 	GetOrAddTexture,
+	GetOrAddCubemap,
+	InsertCubemapAxesSuffix,
 	GetOrAddMesh,
 	AddFontAtlas,
 	AddTextCanvas,

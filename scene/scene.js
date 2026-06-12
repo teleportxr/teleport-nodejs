@@ -191,17 +191,19 @@ class Scene {
 			if(j.environment.background_texture)
 			{
 				this.backgroundTexturePath=j.environment.background_texture;
-				resources.GetOrAddTexture(this.backgroundTexturePath);
+				// The environment background is a cubemap; flag it so each client is served the
+				// variant matching its axes standard (falls back to the base file if absent).
+				resources.GetOrAddCubemap(this.backgroundTexturePath);
 			}
 			if(j.environment.diffuse_cubemap)
 			{
 				this.diffuseCubemapPath=j.environment.diffuse_cubemap;
-				resources.GetOrAddTexture(this.diffuseCubemapPath);
+				resources.GetOrAddCubemap(this.diffuseCubemapPath);
 			}
 			if(j.environment.specular_cubemap)
 			{
 				this.specularCubemapPath=j.environment.specular_cubemap;
-				resources.GetOrAddTexture(this.specularCubemapPath);
+				resources.GetOrAddCubemap(this.specularCubemapPath);
 			}
 		}
 		if(j.font_atlases)
