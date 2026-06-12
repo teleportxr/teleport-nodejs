@@ -308,7 +308,7 @@ class Node {
 		);
 		this.components.push(tc);
 	}
-	encodeIntoDataView(dataView, byteOffset) {
+	encodeIntoDataView(dataView, byteOffset, fromAxes, toAxes) {
 		byteOffset = core.put_uint8(
 			dataView,
 			byteOffset,
@@ -317,8 +317,19 @@ class Node {
 
 		byteOffset = core.put_uint64(dataView, byteOffset, this.uid);
 		byteOffset = core.put_string(dataView, byteOffset, this.name);
+		// Convert the node's transform into the client's axes standard (server -> client). When no
+		// conversion is requested, or the standards match, the pose is encoded unchanged.
 		var clientsidePose = this.pose;
-		
+		if (fromAxes !== undefined && toAxes !== undefined && fromAxes !== toAxes &&
+			toAxes !== core.AxesStandard.NotInitialized)
+		{
+			const c = core.ConvertPose(fromAxes, toAxes, this.pose);
+			clientsidePose = new Pose();
+			clientsidePose.position = c.position;
+			clientsidePose.orientation = c.orientation;
+			clientsidePose.scale = c.scale;
+		}
+
 		byteOffset = clientsidePose.encodeIntoDataView(dataView, byteOffset);
 		
 		byteOffset = core.put_uint8(dataView, byteOffset, this.stationary);

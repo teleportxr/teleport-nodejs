@@ -200,6 +200,111 @@ function AxesStandardToCubemapSuffix(axesStandard)
 	}
 }
 
+// ---- Axes-standard conversions for object transforms ----
+// Ported from the C++ server (libavstream common_maths.h ConvertPosition/Rotation/Scale), which
+// converts each node's transform from the server's axes standard to the client's during encoding.
+// The C++ table only covers Unreal/Unity <-> Gl/Engineering (its server is engine-driven), so the
+// Engineering <-> GlStyle cases below are added here (both right-handed: position/quat vector part
+// maps as (x, z, -y); its inverse as (x, -z, y); scale permutes y/z).
+function ConvertPosition(from, to, p)
+{
+	const A = AxesStandard;
+	if (from === to) return { x: p.x, y: p.y, z: p.z };
+	if (from === A.UnrealStyle)
+	{
+		if (to === A.GlStyle)          return { x: +p.y, y: +p.z, z: -p.x };
+		if (to === A.EngineeringStyle) return { x: p.y, y: p.x, z: p.z };
+	}
+	else if (from === A.UnityStyle)
+	{
+		if (to === A.GlStyle)          return { x: p.x, y: p.y, z: -p.z };
+		if (to === A.EngineeringStyle) return { x: p.x, y: p.z, z: p.y };
+	}
+	else if (from === A.EngineeringStyle)
+	{
+		if (to === A.UnrealStyle)      return { x: p.y, y: p.x, z: p.z };
+		if (to === A.UnityStyle)       return { x: p.x, y: p.z, z: p.y };
+		if (to === A.GlStyle)          return { x: p.x, y: p.z, z: -p.y };	// added
+	}
+	else if (from === A.GlStyle)
+	{
+		if (to === A.UnrealStyle)      return { x: -p.z, y: +p.x, z: +p.y };
+		if (to === A.UnityStyle)       return { x: p.x, y: p.y, z: -p.z };
+		if (to === A.EngineeringStyle) return { x: p.x, y: -p.z, z: p.y };	// added
+	}
+	console.warn("ConvertPosition: unsupported axes "+from+"->"+to+"; leaving unchanged");
+	return { x: p.x, y: p.y, z: p.z };
+}
+
+function ConvertRotation(from, to, q)
+{
+	const A = AxesStandard;
+	if (from === to) return { x: q.x, y: q.y, z: q.z, w: q.w };
+	if (from === A.UnrealStyle)
+	{
+		if (to === A.GlStyle)          return { x: -q.y, y: -q.z, z: +q.x, w: q.w };
+		if (to === A.EngineeringStyle) return { x: -q.y, y: -q.x, z: -q.z, w: q.w };
+	}
+	else if (from === A.EngineeringStyle)
+	{
+		if (to === A.UnrealStyle)      return { x: -q.y, y: -q.x, z: -q.z, w: q.w };
+		if (to === A.UnityStyle)       return { x: -q.x, y: -q.z, z: -q.y, w: q.w };
+		if (to === A.GlStyle)          return { x: q.x, y: q.z, z: -q.y, w: q.w };	// added
+	}
+	else if (from === A.GlStyle)
+	{
+		if (to === A.UnrealStyle)      return { x: +q.z, y: -q.x, z: -q.y, w: q.w };
+		if (to === A.UnityStyle)       return { x: -q.x, y: -q.y, z: q.z, w: q.w };
+		if (to === A.EngineeringStyle) return { x: q.x, y: -q.z, z: q.y, w: q.w };	// added
+	}
+	else if (from === A.UnityStyle)
+	{
+		if (to === A.GlStyle)          return { x: -q.x, y: -q.y, z: q.z, w: q.w };
+		if (to === A.EngineeringStyle) return { x: -q.x, y: -q.z, z: -q.y, w: q.w };
+	}
+	console.warn("ConvertRotation: unsupported axes "+from+"->"+to+"; leaving unchanged");
+	return { x: q.x, y: q.y, z: q.z, w: q.w };
+}
+
+function ConvertScale(from, to, s)
+{
+	const A = AxesStandard;
+	if (from === to) return { x: s.x, y: s.y, z: s.z };
+	if (from === A.UnrealStyle)
+	{
+		if (to === A.GlStyle)          return { x: +s.y, y: +s.z, z: s.x };
+		if (to === A.EngineeringStyle) return { x: s.y, y: s.x, z: s.z };
+	}
+	else if (from === A.UnityStyle)
+	{
+		if (to === A.GlStyle)          return { x: s.x, y: s.y, z: s.z };
+		if (to === A.EngineeringStyle) return { x: s.x, y: s.z, z: s.y };
+	}
+	else if (from === A.EngineeringStyle)
+	{
+		if (to === A.UnrealStyle)      return { x: s.y, y: s.x, z: s.z };
+		if (to === A.UnityStyle)       return { x: s.x, y: s.z, z: s.y };
+		if (to === A.GlStyle)          return { x: s.x, y: s.z, z: s.y };	// added (abs of position map)
+	}
+	else if (from === A.GlStyle)
+	{
+		if (to === A.UnrealStyle)      return { x: s.z, y: +s.x, z: +s.y };
+		if (to === A.UnityStyle)       return { x: s.x, y: s.y, z: s.z };
+		if (to === A.EngineeringStyle) return { x: s.x, y: s.z, z: s.y };	// added
+	}
+	return { x: s.x, y: s.y, z: s.z };
+}
+
+//! Convert a {position, orientation, scale} pose from one axes standard to another.
+function ConvertPose(from, to, pose)
+{
+	return {
+		position:    ConvertPosition(from, to, pose.position),
+		orientation: ConvertRotation(from, to, pose.orientation),
+		scale:       ConvertScale(from, to, pose.scale || { x: 1, y: 1, z: 1 }),
+	};
+}
+
 const GeometryPayloadType =
 {
 	Invalid: 0,
@@ -460,7 +565,9 @@ function put_string(dataView, byteOffset, name) {
 
 module.exports = {
 	UID_SIZE, endian, SizeOfType, encodeIntoDataView, decodeFromDataView
-	, vec4, BackgroundMode, AxesStandard, AxesStandardToCubemapSuffix, GeometryPayloadType, DisplayInfo, RenderingFeatures, LightingMode, VideoCodec
+	, vec4, BackgroundMode, AxesStandard, AxesStandardToCubemapSuffix
+	, ConvertPosition, ConvertRotation, ConvertScale, ConvertPose
+	, GeometryPayloadType, DisplayInfo, RenderingFeatures, LightingMode, VideoCodec
 	, VideoConfig, ClientDynamicLighting, encodeToUint8Array, decodeFromUint8Array
 	, generateUid, getStartTimeUnixUs, getTimestampUs,
 	unixTimeToUTCString, put_float32, put_uint16, put_int32, put_uint32

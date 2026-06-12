@@ -228,6 +228,9 @@ class Client {
 		this.setupCommand.int64_startTimestamp_utc_unix_us = BigInt(core.getStartTimeUnixUs());
 		if(this.scene)
 		{
+			// Tell the client which axes standard the server authored the scene in. Node transforms
+			// are converted to the client's own standard at encode time (see SendNode).
+			this.setupCommand.AxesStandard_axesStandard=this.scene.serverAxesStandard;
 			if(this.scene.backgroundTexturePath&&this.scene.backgroundTexturePath!="")
 			{
 				this.setupCommand.BackgroundMode_backgroundMode=BackgroundMode.TEXTURE;
@@ -550,7 +553,9 @@ class Client {
 		var node=this.scene.GetNode(uid);
 		const MAX_NODE_SIZE=500;
 		const buffer = new ArrayBuffer(MAX_NODE_SIZE);
-		const nodeSize=node_encoder.encodeNode(node,buffer);
+		// Convert the node's transform from the server's axes standard to this client's, exactly as
+		// the C++ server does in GeometryEncoder::encodeNodes (ConvertTransform server->client).
+		const nodeSize=node_encoder.encodeNode(node,buffer,this.scene.serverAxesStandard,this.clientAxesStandard);
 		const view2 = new DataView(buffer, 0, nodeSize);
 		if(!this.webRtcConnection)
 		{

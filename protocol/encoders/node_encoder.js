@@ -13,13 +13,15 @@ function putPlaceholderSize(dataView)
 }
 
 // return the size of the encoded node.
-function encodeNode(node,buffer)
+// fromAxes/toAxes, when supplied, convert the node's transform from the server's axes standard to
+// the client's during encoding (matches the C++ server). Omit them to encode the pose unchanged.
+function encodeNode(node,buffer,fromAxes,toAxes)
 {
 	var byteOffset=0;
-	const dataView = new DataView(buffer); 
+	const dataView = new DataView(buffer);
 	byteOffset=putPlaceholderSize(dataView);
 
-	var t=node.encodeIntoDataView(dataView,byteOffset);
+	var t=node.encodeIntoDataView(dataView,byteOffset,fromAxes,toAxes);
 	byteOffset=t;
 	// Actual size is now known: write the count of bytes that follow the
 	// size field, in little-endian (the protocol convention). Without the

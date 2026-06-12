@@ -15,6 +15,10 @@ class Scene {
 		this.specularCubemapPath="";
 		this.assetsPath="assets";
 		this.publicPath="http_resources";
+		// The axes standard the scene (node poses, cubemaps) is authored in. Node transforms are
+		// converted from this to each client's axes standard when streamed. Z-up Engineering by
+		// default, matching the C++ client's native frame and the *_eng cubemap source.
+		this.serverAxesStandard=core.AxesStandard.EngineeringStyle;
 	}
 	GetOrCreateNode(uid) {
 		if (!this.nodes.has(uid)) {
