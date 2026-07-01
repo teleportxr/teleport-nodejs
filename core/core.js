@@ -32,6 +32,10 @@ function SizeOfType(member) {
 			return [16, "struct"];
 		case "uid":
 			return [8, "uint64"];
+		case "int16":
+			return [2, "int16"];
+		case "uint16":
+			return [2, "uint16"];
 		case "int32":
 			return [4, "int32"];
 		case "uint32":
@@ -42,6 +46,8 @@ function SizeOfType(member) {
 			return [8, "int64"];
 		case "VideoConfig":
 			return [89, "struct"];
+		case "AudioConfig":
+			return [17, "struct"];
 		case "VideoCodec":
 		case "AxesStandard":
 		case "GeometryPayloadType":
@@ -66,6 +72,12 @@ function encodeIntoDataView(obj, dataView, byteOffset) {
 		}
 		else if (tp == "int8") {
 			dataView.setInt8(byteOffset, value, endian);
+		}
+		else if (tp == "uint16") {
+			dataView.setUint16(byteOffset, value, endian);
+		}
+		else if (tp == "int16") {
+			dataView.setInt16(byteOffset, value, endian);
 		}
 		else if (tp == "uint32") {
 			dataView.setUint32(byteOffset, value, endian);
@@ -108,6 +120,14 @@ function decodeFromDataView(obj, dataView, byteOffset) {
 		}
 		else if (tp == "int8") {
 			var value = dataView.getInt8(byteOffset);
+			obj[key] = value;
+		}
+		else if (tp == "uint16") {
+			var value = dataView.getUint16(byteOffset, endian);
+			obj[key] = value;
+		}
+		else if (tp == "int16") {
+			var value = dataView.getInt16(byteOffset, endian);
 			obj[key] = value;
 		}
 		else if (tp == "uint32") {
@@ -395,6 +415,24 @@ class VideoConfig {
 	}
 };	// 89 bytes
 
+//! Audio configuration carried inside SetupCommand (17 bytes).
+//! See docs/protocol/audio.rst §AudioConfig for the full specification.
+class AudioConfig {
+	constructor() {
+		this.uint8_codec             = 1;    //!< 0=disabled; 1=Opus
+		this.uint8_rtpPayloadType    = 111;
+		this.uint32_sampleRateHz     = 48000;
+		this.uint8_channelCount      = 1;
+		this.uint8_frameDurationMs   = 20;
+		this.uint8_flags             = 3;    //!< bit0=FEC, bit1=DTX
+		this.uint8_maxInboundStreams = 0;
+		this.uint8_selectionPolicy   = 0;    //!< 0=All
+		this.float32_proximityRadiusMetres = 0.0;
+		this.uint16_evictionGraceMs  = 0;
+	}
+	static sizeof() { return 17; }
+};
+
 //! Setup for dynamically-lit objects on the client.
 class ClientDynamicLighting {
 	constructor() {
@@ -568,7 +606,7 @@ module.exports = {
 	, vec4, BackgroundMode, AxesStandard, AxesStandardToCubemapSuffix
 	, ConvertPosition, ConvertRotation, ConvertScale, ConvertPose
 	, GeometryPayloadType, DisplayInfo, RenderingFeatures, LightingMode, VideoCodec
-	, VideoConfig, ClientDynamicLighting, encodeToUint8Array, decodeFromUint8Array
+	, VideoConfig, AudioConfig, ClientDynamicLighting, encodeToUint8Array, decodeFromUint8Array
 	, generateUid, getStartTimeUnixUs, getTimestampUs,
 	unixTimeToUTCString, put_float32, put_uint16, put_int32, put_uint32
 	, put_uint64, put_uint8, put_vec2, put_vec3, put_vec4, put_string

@@ -12,7 +12,8 @@ const NodeDataType =
 	SubScene:5,
 	Skeleton:6,
 	Link:7,
-	Script:8
+	Script:8,
+	AudioEmitter:9
 };
 
 class Pose
@@ -227,6 +228,39 @@ class SkeletonComponent extends Component
 	}
 };
 
+// Wire-encoded audio emitter. Associates a node with an abstract audio-stream
+// index carried on a WebRTC media track. Encoded into the node payload and
+// decoded on the client into an AudioEmitterComponent.
+const AudioEmitterFlags = { NONE: 0, SPATIALISED: 1 << 0 };
+const AudioEmitterSilenceReason = { NONE: 0, OUT_OF_RANGE: 1, CAP_EXCEEDED: 2, MUTED: 3 };
+
+class AudioEmitterComponent extends Component
+{
+	constructor()
+	{
+		super();
+		this.audioStreamIndex = 0;
+		this.flags = AudioEmitterFlags.SPATIALISED;
+		this.silenceReason = AudioEmitterSilenceReason.NONE;
+		this.gain = 1.0;
+		this.minDistanceMetres = 1.0;
+		this.maxDistanceMetres = 100.0;
+	}
+	getType() {
+		return NodeDataType.AudioEmitter;
+	}
+	encodeIntoDataView(dataView, byteOffset) {
+		byteOffset = core.put_uint8(dataView, byteOffset, NodeDataType.AudioEmitter);
+		byteOffset = core.put_uint32(dataView, byteOffset, this.audioStreamIndex);
+		byteOffset = core.put_uint8(dataView, byteOffset, this.flags);
+		byteOffset = core.put_uint8(dataView, byteOffset, this.silenceReason);
+		byteOffset = core.put_float32(dataView, byteOffset, this.gain);
+		byteOffset = core.put_float32(dataView, byteOffset, this.minDistanceMetres);
+		byteOffset = core.put_float32(dataView, byteOffset, this.maxDistanceMetres);
+		return byteOffset;
+	}
+};
+
 // Server-side only. Sound components reference an audio asset on the server
 // and are streamed via the WebRTC audio media track; they are never encoded
 // into the scene-graph payload sent to clients.
@@ -288,6 +322,30 @@ class Node {
 			if (c.url === url) return;
 		}
 		this.soundComponents.push(new SoundComponent(url));
+	}
+	// Attach (or update) a wire-encoded audio emitter referencing an abstract
+	// audio-stream index. Options: spatialised, gain, minDistanceMetres,
+	// maxDistanceMetres, silenceReason.
+	setAudioEmitter(audioStreamIndex, options = {}) {
+		var e = null;
+		for (const c of this.components) {
+			if (c.getType() == NodeDataType.AudioEmitter) {
+				e = c;
+				break;
+			}
+		}
+		if (e === null) {
+			e = new AudioEmitterComponent();
+			this.components.push(e);
+		}
+		e.audioStreamIndex = audioStreamIndex;
+		if (options.spatialised !== undefined)
+			e.flags = options.spatialised ? AudioEmitterFlags.SPATIALISED : AudioEmitterFlags.NONE;
+		if (options.gain !== undefined) e.gain = options.gain;
+		if (options.minDistanceMetres !== undefined) e.minDistanceMetres = options.minDistanceMetres;
+		if (options.maxDistanceMetres !== undefined) e.maxDistanceMetres = options.maxDistanceMetres;
+		if (options.silenceReason !== undefined) e.silenceReason = options.silenceReason;
+		return e;
 	}
 	setCanvasComponent(canvas_path) {
 		this.components.forEach((component) => {
@@ -389,4 +447,4 @@ class Node {
 	}
 };
 
-module.exports = {NodeDataType,Pose,PoseDynamic,NodePoseDynamic, Node, SoundComponent };
+module.exports = {NodeDataType,Pose,PoseDynamic,NodePoseDynamic, Node, SoundComponent, AudioEmitterComponent, AudioEmitterFlags, AudioEmitterSilenceReason };

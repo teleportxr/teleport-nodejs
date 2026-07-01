@@ -21,7 +21,9 @@ const CommandPayloadType =
 	AssignNodePosePath:14,				
 	SetupInputs:15,
 	PingForLatency:16,
-	SetOriginNode:128		
+	AudioSourceMapping:17,
+	AudioParticipantStateChange:18,
+	SetOriginNode:128
 };
 class Command{
 	constructor(){
@@ -44,19 +46,20 @@ class SetupCommand extends Command
         this.int32_requiredLatencyMs = 0;							    //!< 9+4=13
         this.uint32_idle_connection_timeout = 5000.0;				    //!< 13+4=17
         this.uint64_session_id = BigInt.asUintN(64, BigInt(0));							    //!< 17+8=25	The server's session id changes when the server session changes.	37 bytes
-        this.VideoConfig_video_config=new core.VideoConfig();			    //!< 25+89=114	Video setup structure. 41+89=130 bytes
-        this.float32_draw_distance = 0.0;								    //!< 114+4=118	Maximum distance in metres to render locally. 134
-        this.AxesStandard_axesStandard = core.AxesStandard.NotInitialized;	//!< 118+1=119	The axis standard that the server uses, may be different from the client's. 147
-        this.uint8_audio_input_enabled = 0;							    //!< 119+1=120	Server accepts audio stream from client.
-        this.bool_using_ssl = true;									    //!< 120+1=121	Not in use, for later.
-        this.int64_startTimestamp_utc_unix_us = BigInt.asUintN(64,  BigInt(0));			    //!< 121+8=129	UTC Unix Timestamp in microseconds when the server session began.
-        // TODO: replace this with a background Material, which MAY contain video, te			xture and/or plain colours.
-        this.BackgroundMode_backgroundMode=core.BackgroundMode.COLOUR;   	//!< 129+1=130	Whether the server supplies a background, and of which type.
-        this.vec4_backgroundColour=new core.vec4();						    //!< 130+16=146 If the background is of the COLOUR type, which colour to use.
-        this.uid_backgroundTexture=BigInt(0);
+        this.VideoConfig_video_config=new core.VideoConfig();			    //!< 25+89=114	Video setup structure.
+        this.AudioConfig_audio_config=new core.AudioConfig();			    //!< 114+17=131	Audio media-track config.
+        this.float32_draw_distance = 0.0;								    //!< 131+4=135	Maximum distance in metres to render locally.
+        this.AxesStandard_axesStandard = core.AxesStandard.NotInitialized;	//!< 135+1=136	The axis standard that the server uses.
+        this.uint8_audio_input_enabled = 0;							    //!< 136+1=137	Server accepts a microphone media track from the client.
+        this.bool_using_ssl = true;									    //!< 137+1=138	Not in use, for later.
+        this.int64_startTimestamp_utc_unix_us = BigInt.asUintN(64,  BigInt(0));			    //!< 138+8=146	UTC Unix Timestamp in microseconds when the server session began.
+        // TODO: replace this with a background Material, which MAY contain video, texture and/or plain colours.
+        this.BackgroundMode_backgroundMode=core.BackgroundMode.COLOUR;   	//!< 146+1=147	Whether the server supplies a background, and of which type.
+        this.vec4_backgroundColour=new core.vec4();						    //!< 147+16=163	If the background is of the COLOUR type, which colour to use.
+        this.uid_backgroundTexture=BigInt(0);                               //!< 163+8=171
     }
     static sizeof(){
-        return 154;
+        return 171;
     }
     size(){
         return SetupCommand.sizeof();
@@ -143,4 +146,33 @@ class SetLightingCommand extends AckedCommand
 }
 
 
-module.exports= {Command,CommandPayloadType,SetupCommand,AcknowledgeHandshakeCommand,SetOriginNodeCommand,SetLightingCommand};
+//! Sent from server to client when the set of audio tracks delivered to a client changes.
+//! The fixed-size header is followed on the wire by addedCount AddedEntry records
+//! (uint8 midLen + midLen UTF-8 bytes + uint64 sourceClientUid) then removedCount
+//! RemovedEntry records (uint8 midLen + midLen UTF-8 bytes).
+class AudioSourceMappingCommand extends Command
+{
+	constructor(){
+		super();
+		this.CommandPayloadType_commandPayloadType = CommandPayloadType.AudioSourceMapping;
+		this.uint16_addedCount   = 0;
+		this.uint16_removedCount = 0;
+	}
+	static sizeof() { return 5; } // 1 tag + 2 addedCount + 2 removedCount
+	size() { return AudioSourceMappingCommand.sizeof(); }
+}
+
+//! Sent from server to client to report user-visible audio state changes for participants.
+//! Followed by updateCount × 10-byte Update records (uint64 sourceClientUid + uint8 state + uint8 reason).
+class AudioParticipantStateChangeCommand extends Command
+{
+	constructor(){
+		super();
+		this.CommandPayloadType_commandPayloadType = CommandPayloadType.AudioParticipantStateChange;
+		this.uint16_updateCount = 0;
+	}
+	static sizeof() { return 3; } // 1 tag + 2 updateCount
+	size() { return AudioParticipantStateChangeCommand.sizeof(); }
+}
+
+module.exports= {Command,CommandPayloadType,SetupCommand,AcknowledgeHandshakeCommand,SetOriginNodeCommand,SetLightingCommand,AudioSourceMappingCommand,AudioParticipantStateChangeCommand};
