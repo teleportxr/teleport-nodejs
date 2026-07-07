@@ -12,7 +12,8 @@ const NodeDataType =
 	SubScene:5,
 	Skeleton:6,
 	Link:7,
-	Script:8
+	Script:8,
+	AudioEmitter:9		// Reserved. Audio is bound via the track SDP mid = emitting node uid; not carried in the node payload.
 };
 
 class Pose
