@@ -228,7 +228,12 @@ class WebRtcConnection extends EventEmitter
 			{
 				const offer = await pc.createOffer();
 				if (this.peerConnection !== pc) return;
-				await pc.setLocalDescription(offer);
+				// Rename each node-audio m-line's mid to the emitting node's uid
+				// (see docs/protocol/audio.rst) before it is committed, so the binding
+				// is intrinsic to the track. Munging pre-setLocalDescription is accepted
+				// by wrtc and reflected in pc.localDescription.
+				const mungedSdp = this._mungeAudioMids(offer.sdp);
+				await pc.setLocalDescription({ type: 'offer', sdp: mungedSdp });
 				if (this.peerConnection !== pc) return;
 				// Use pc.localDescription.sdp rather than the createOffer() result: the
 				// ICE ufrag/pwd in the SDP returned by createOffer() are provisional and
@@ -499,6 +504,98 @@ class WebRtcConnection extends EventEmitter
             this._localAudioTrack = null;
         }
         this._audioSource = null;
+        if (this._nodeAudioSources) {
+            for (const v of this._nodeAudioSources.values()) {
+                try { v.track.stop(); } catch (e) {}
+            }
+            this._nodeAudioSources.clear();
+        }
+    }
+    // ── Per-node forwarded audio tracks ────────────────────────────────────────
+    // A node may emit audio (a participant's microphone, but equally an object,
+    // ambient source or announcer). Each such source is its own sendonly
+    // transceiver whose SDP mid is set to the emitting node's uid (see
+    // docs/protocol/audio.rst), so the client binds and spatialises it by node.
+    // The caller pushes that node's PCM into the returned RTCAudioSource. Call
+    // renegotiate() after adding/removing to re-offer.
+    // sourceNodeUid: BigInt|number|string. Returns the RTCAudioSource (or null).
+    addNodeAudioSource(sourceNodeUid) {
+        const uid = BigInt(sourceNodeUid);
+        if (!uid) return null;
+        if (!this._nodeAudioSources) this._nodeAudioSources = new Map();
+        const existing = this._nodeAudioSources.get(uid);
+        if (existing) return existing.audioSource;
+        if (!this.peerConnection) return null;
+        try {
+            const audioSource = new wrtc.nonstandard.RTCAudioSource();
+            const track = audioSource.createTrack();
+            const transceiver = this.peerConnection.addTransceiver(track, { direction: 'sendonly' });
+            this._nodeAudioSources.set(uid, { audioSource, track, transceiver, trackId: track.id });
+            return audioSource;
+        } catch (e) {
+            console.error('addNodeAudioSource failed for node ' + uid + ': ' + e.message);
+            return null;
+        }
+    }
+    removeNodeAudioSource(sourceNodeUid) {
+        const uid = BigInt(sourceNodeUid);
+        if (!this._nodeAudioSources) return;
+        const v = this._nodeAudioSources.get(uid);
+        if (!v) return;
+        try { v.track.stop(); } catch (e) {}
+        // The m-line cannot be removed, but going inactive/silent retires the source.
+        try { if (v.transceiver) v.transceiver.direction = 'inactive'; } catch (e) {}
+        this._nodeAudioSources.delete(uid);
+    }
+    // The node uids of the node-audio sources currently attached to this listener.
+    getNodeAudioSourceUids() {
+        if (!this._nodeAudioSources) return [];
+        return [...this._nodeAudioSources.keys()];
+    }
+    // Re-offer to apply added/removed node-audio tracks. No-op unless the connection
+    // is in a stable signalling state (a pending offer will be picked up next tick).
+    async renegotiate() {
+        const pc = this.peerConnection;
+        if (!pc || typeof pc.signalingState === 'string' && pc.signalingState !== 'stable') return;
+        await this.doOffer();
+    }
+    // Rewrite each node-audio m-line's mid to its emitting node uid, correlating
+    // m-line -> node by the track id carried in the m-line's a=msid, and repair the
+    // BUNDLE group. Idempotent: an m-line already carrying its node-uid mid is skipped.
+    _mungeAudioMids(sdp) {
+        if (!this._nodeAudioSources || this._nodeAudioSources.size === 0) return sdp;
+        const byTrack = new Map();
+        for (const [uid, v] of this._nodeAudioSources) byTrack.set(v.trackId, uid.toString());
+        const lines = sdp.split(/\r\n|\n/);
+        const renames = new Map(); // oldMid -> newMid
+        let i = 0;
+        while (i < lines.length) {
+            if (!lines[i].startsWith('m=')) { i++; continue; }
+            let j = i + 1, midIdx = -1, oldMid = null, trackId = null;
+            while (j < lines.length && !lines[j].startsWith('m=')) {
+                const l = lines[j];
+                if (l.startsWith('a=mid:')) { midIdx = j; oldMid = l.slice(6).trim(); }
+                else if (l.startsWith('a=msid:')) {
+                    const parts = l.slice(7).trim().split(/\s+/); // "- <trackId>"
+                    if (parts.length >= 2) trackId = parts[1];
+                }
+                j++;
+            }
+            if (midIdx >= 0 && trackId && byTrack.has(trackId)) {
+                const newMid = byTrack.get(trackId);
+                if (newMid !== oldMid) { lines[midIdx] = 'a=mid:' + newMid; renames.set(oldMid, newMid); }
+            }
+            i = j;
+        }
+        if (renames.size === 0) return sdp;
+        for (let k = 0; k < lines.length; k++) {
+            if (!lines[k].startsWith('a=group:BUNDLE')) continue;
+            const toks = lines[k].split(/\s+/);
+            for (let t = 1; t < toks.length; t++)
+                if (renames.has(toks[t])) toks[t] = renames.get(toks[t]);
+            lines[k] = toks.join(' ');
+        }
+        return lines.join('\r\n');
     }
     // Start streaming all SoundComponents in the given scene as a single mixed
     // 48 kHz / mono / int16 PCM track via the outbound audio media track. Idempotent

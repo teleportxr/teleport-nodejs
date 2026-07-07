@@ -67,6 +67,12 @@ class Client {
 		this.webRtcConnection=null;
 		this.currentOriginState=new OriginState();
 		this.currentLightingState=new LightingState();
+		// Latest head pose reported by the client (node.Pose), or null before the first
+		// NodePosesMessage. Used server-side for proximity-based audio selection.
+		this.currentHeadPose=null;
+		// When true, the SetupCommand tells the client to send its microphone track
+		// (needed for the audio SFU). Set by the host before Start(); default off.
+		this.acceptMicrophone=false;
 		this.next_ack_id=BigInt(1);
 		this.clientStartMs=Date.now();
 		this.webRtcConnectedAtMs=0;
@@ -211,6 +217,9 @@ class Client {
 		this.clientStartMs=Date.now();
 		console.log("[T+0ms] Client.Start() — sending SetupCommand for client "+this.clientID);
         this.setupCommand=new command.SetupCommand();
+        // Accept the client's microphone media track when the host has enabled it
+        // (required for the audio SFU to receive and forward this client's voice).
+        this.setupCommand.uint8_audio_input_enabled = this.acceptMicrophone ? 1 : 0;
         this.clientDynamicLighting=new core.ClientDynamicLighting();
 		// Session is (re)starting; the client has zero state, so retract any
 		// outstanding ack tracking from a previous session and force a resend.
@@ -385,6 +394,15 @@ class Client {
 	ProcessNodePoses(headPose,numPoses,nodePoses)
 	{
 		//console.log("Client: ProcessNodePoses ", numPoses, " poses.");
+		// Retain the head pose as this client's current world position, for
+		// proximity-based audio source selection (see src/mic-router.js).
+		if (headPose)
+			this.currentHeadPose = headPose;
+	}
+	// This client's current world position {x,y,z}, or null if not yet known.
+	GetHeadPosition()
+	{
+		return (this.currentHeadPose && this.currentHeadPose.position) ? this.currentHeadPose.position : null;
 	}
 	UpdateStreaming()
 	{
