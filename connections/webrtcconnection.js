@@ -113,6 +113,16 @@ class WebRtcConnection extends EventEmitter
 	}
 	reconnect()
 	{
+		// A browser peer that has already accepted an SDP with N m-sections will
+		// reject any later offer with fewer (RTCPeerConnection throws "New remote
+		// description has fewer m-sections than the previous remote description"),
+		// tearing down the whole connection. Recreating the PeerConnection below
+		// starts with zero transceivers, so remember which per-node audio sources
+		// were live beforehand and re-add matching ones on the new PeerConnection
+		// (below) before the next offer goes out, keeping the m-section count from
+		// shrinking relative to what the browser already negotiated.
+		const previousAudioSourceUids = this.getNodeAudioSourceUids();
+
 		// Close and clean up the previous PeerConnection before creating a new one.
 		// Failing to do so leaves the old ICE agent (and its UDP socket) alive, which
 		// causes it to keep sending/receiving STUN messages with stale credentials and
@@ -136,6 +146,8 @@ class WebRtcConnection extends EventEmitter
 		// the previous PeerConnection's lifetime suppresses UpdateStreaming kick.
 		this._dataChannelsOpenFired = false;
 		this.beforeOffer();
+		for (const uid of previousAudioSourceUids)
+			this.addNodeAudioSource(uid);
 		this.connectionTimer = this.options.setTimeout(() =>
 		{
 			if (this.peerConnection.iceConnectionState !== 'connected'
