@@ -95,6 +95,25 @@ test('ClientManager.disconnectClient removes client from map', () => {
 	assert.strictEqual(cm.clients.has(42), false, 'client must be removed from the map');
 });
 
+test('streamingConnectionStateChanged rebaselines the connect-attempt clock on post-connect failure', () => {
+	// Simulate a client that connected a long time ago (well past the timeout window),
+	// then later has its ICE connection fail. Before the fix, hasWebRtcConnectionTimedOut()
+	// would compare against the original, stale webRtcConnectionInitiatedAtMs and report an
+	// immediate timeout, force-disconnecting the client before its own reconnect logic
+	// (WebRtcConnection.reconnect(), in webrtcconnection.js) gets a chance to run.
+	const c = makeStubClient({
+		webRtcConnectionInitiatedAtMs: Date.now() - 100000, // original connect attempt, long ago
+	});
+	c.webRtcConnected = true;
+	c.webRtcConnectedAtMs = Date.now() - 90000;
+
+	c.streamingConnectionStateChanged('failed');
+
+	assert.strictEqual(c.webRtcConnected, false, 'webRtcConnected must be false after a failure');
+	assert.strictEqual(c.hasWebRtcConnectionTimedOut(), false,
+		'must not report a timeout immediately after rebaselining, so reconnect gets a fresh window');
+});
+
 test('ClientManager.UpdateStreaming removes timed-out clients', async () => {
 	const cm = new ClientManager();
 	const clientsRemoved = [];

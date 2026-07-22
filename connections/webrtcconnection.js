@@ -226,6 +226,14 @@ class WebRtcConnection extends EventEmitter
 			const pc = this.peerConnection;
 			try
 			{
+				// Hand the client the same ICE server list (including any TURN entries) this
+				// connection is using, so the client doesn't need TURN credentials hardcoded
+				// or locally configured — this server is the single source of truth. Sent
+				// before the offer so it's ready by the time the client builds its
+				// RTCConfiguration.
+				const iceServersMessage = JSON.stringify({"teleport-signal-type": "ice-servers", "iceServers": this.iceServers});
+				this.sendConfigMessage(this.id, iceServersMessage);
+
 				const offer = await pc.createOffer();
 				if (this.peerConnection !== pc) return;
 				// Rename each node-audio m-line's mid to the emitting node's uid

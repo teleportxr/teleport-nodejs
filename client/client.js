@@ -125,6 +125,13 @@ class Client {
 		else
 		{
 			this.webRtcConnected=false;
+			// Rebaseline the connect-attempt clock so hasWebRtcConnectionTimedOut() gives the
+			// low-level WebRtcConnection.reconnect() (webrtcconnection.js) a fresh
+			// WEBRTC_CONNECT_TIMEOUT_MS window to recover, instead of comparing against the
+			// original connection-start time from potentially many seconds/minutes earlier —
+			// which would otherwise make any post-connect ICE failure time out almost instantly
+			// on the next UpdateStreaming() tick and force-disconnect the client mid-reconnect.
+			this.webRtcConnectionInitiatedAtMs=Date.now();
 			if (this.webRtcConnection)
 			{
 				try { this.webRtcConnection.stopSceneAudio(); } catch (e) {}
