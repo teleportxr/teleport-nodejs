@@ -111,14 +111,22 @@ class GeometryService {
 		// this client should stream node uid.
 		var res = GeometryService.GetOrCreateTrackedResource(uid);
 		var index = clientIDToIndex.get(this.clientID);
+		if (res.clientNeeds.get(index)) {
+			// Already streaming for this client — nothing to do.
+			return;
+		}
 		res.clientNeeds.set(index, true);
 		// Add to the list of nodes this client should eventually receive:
 		this.nodesToStreamEventually.add(uid);
 	}
 	UnstreamNode(uid) {
 		var index = clientIDToIndex.get(this.clientID);
-		if (GeometryService.trackedResources.has(uid)) {
-			var res = GeometryService.GetOrCreateTrackedResource(uid);
+		var res = GeometryService.trackedResources.get(uid);
+		if (res) {
+			if (!res.clientNeeds.get(index)) {
+				// Already unstreamed for this client — nothing to do.
+				return;
+			}
 			res.clientNeeds.set(index, false);
 		}
 		// Should certainly be in this set:
