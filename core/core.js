@@ -340,6 +340,7 @@ const GeometryPayloadType =
 	TexturePointer: 10,
 	MeshPointer: 11,
 	MaterialPointer: 12,
+	RemoveNodes: 13,
 };
 
 class DisplayInfo {

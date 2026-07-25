@@ -29,4 +29,23 @@ function encodeNode(node,buffer,fromAxes,toAxes)
 	dataView.setBigUint64(0,BigInt(byteOffset-8),core.endian);
 	return byteOffset;
 }
-module.exports= {encodeNode};
+
+// Encode a RemoveNodes payload: uint8 payload type, uint16 count, then count
+// uint64 node uids (matches GeometryEncoder::encodeRemoveNodes on the C++ server
+// and GeometryDecoder::decodeRemoveNodes on the client). Returns the size written.
+function encodeRemoveNodes(node_uids,buffer)
+{
+	var byteOffset=0;
+	const dataView = new DataView(buffer);
+	byteOffset=putPlaceholderSize(dataView);
+
+	byteOffset=core.put_uint8(dataView,byteOffset,core.GeometryPayloadType.RemoveNodes);
+	byteOffset=core.put_uint16(dataView,byteOffset,node_uids.length);
+	for (var i=0;i<node_uids.length;i++)
+	{
+		byteOffset=core.put_uint64(dataView,byteOffset,node_uids[i]);
+	}
+	dataView.setBigUint64(0,BigInt(byteOffset-8),core.endian);
+	return byteOffset;
+}
+module.exports= {encodeNode,encodeRemoveNodes};

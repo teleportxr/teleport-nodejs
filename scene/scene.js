@@ -52,6 +52,13 @@ class Scene {
 		this.nodes.set(uid, newNode);
 		return uid;
 	}
+	//! Remove a node from the scene (e.g. a session-scoped avatar node whose
+	//! owning client has disconnected). Returns true if the node was present.
+	//! Callers must UnstreamNode(uid) for any clients that received it, so they
+	//! are sent a RemoveNodes payload.
+	RemoveNode(uid) {
+		return this.nodes.delete(uid);
+	}
 	GetAllNodeUids() {
 		let node_uids = Array.from(this.nodes.keys());
 		return node_uids;

@@ -13,6 +13,7 @@ class ClientManager
 		this.clients= new Map();
 		this.addClientNodeAndReturnOriginUid=null;
 		this.onClientPostCreate=null;
+		this.onClientDisconnect=null;
 		this.geometryIntervalId=0;
 		let unixt_us=core.getStartTimeUnixUs();
 		console.log("Start Time: "+unixt_us+" us = "+core.unixTimeToUTCString(unixt_us)+"\n");
@@ -81,6 +82,11 @@ class ClientManager
 	RemoveClient(clientID){
         if(this.clients.has(clientID)) {
 			this.clients.delete(clientID);
+			// Notify the host application after removal, so per-client state
+			// (e.g. avatar nodes) can be torn down while this client is gone
+			// from the map but the remaining clients are still iterable.
+			if(this.onClientDisconnect!=null)
+				this.onClientDisconnect(clientID);
 			if(this.clients.size==0)
 				this.StopStreaming();
 		}
@@ -105,6 +111,10 @@ class ClientManager
 	SetClientPostCreationCallback(cb)
 	{
 		this.onClientPostCreate=cb;
+	}
+	SetClientDisconnectionCallback(cb)
+	{
+		this.onClientDisconnect=cb;
 	}
 	// This is a callback, signaling service calls this when the client has signalled.
 	newClient(clientID, signalingClient) {

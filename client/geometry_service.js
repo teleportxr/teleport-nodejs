@@ -88,6 +88,9 @@ class GeometryService {
 		this.streamedAnimations = new Map();
 		this.streamedTextCanvases = new Map();
 		this.streamedFontAtlases = new Map();
+		// Nodes that were streamed to this client and have since been unstreamed.
+		// Drained by GetRemoveNodesToSend() and sent as a RemoveNodes payload.
+		this.removedNodesToSend = new Set();
 
 		this.backgroundTextureUid = 0;
 		// ten seconds for timeout. Tweak this.
@@ -128,6 +131,11 @@ class GeometryService {
 				return;
 			}
 			res.clientNeeds.set(index, false);
+			// If the node was actually sent to this client, the client must be
+			// told to destroy it via a RemoveNodes payload.
+			if (res.WasSentToClient(this.clientID)) {
+				this.removedNodesToSend.add(uid);
+			}
 		}
 		// Should certainly be in this set:
 		this.nodesToStreamEventually.delete(uid);
@@ -135,6 +143,14 @@ class GeometryService {
 		this.streamedNodes.delete(uid);
 		// TODO: now reduce the counts for all the dependent resources.
 		console.log("Unstreaming node ", uid," for client ", this.clientID);
+	}
+	//! Drain the set of nodes the client must destroy. Returns an array of uids;
+	//! the caller re-queues via UnstreamNode semantics if the send fails.
+	GetRemoveNodesToSend() {
+		if (this.removedNodesToSend.size == 0) return [];
+		var uids = Array.from(this.removedNodesToSend);
+		this.removedNodesToSend.clear();
+		return uids;
 	}
 	StreamOrUnstream(resourceMap, uid, diff) {
 		// exclude "undefined"

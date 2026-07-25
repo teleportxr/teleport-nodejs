@@ -431,6 +431,11 @@ class Client {
 		{
 			this.SendNode(uid);
 		}
+		var remove_nodes_uids=this.geometryService.GetRemoveNodesToSend();
+		if (remove_nodes_uids.length)
+		{
+			this.SendRemoveNodes(remove_nodes_uids);
+		}
 		var mesh_uids=this.geometryService.GetMeshesToSend();
 		for (const uid of mesh_uids)
 		{
@@ -599,7 +604,41 @@ class Client {
 		if(sendSuccess)
 			this.geometryService.EncodedResource(uid);
 	}
-	//! For a cubemap resource, return the URL of the variant matching this client's axes
+	//! Tell the client to destroy the given nodes (RemoveNodes payload). If the
+	//! geometry channel is not open the uids are re-queued so the next tick retries.
+	SendRemoveNodes(uids)
+	{
+		if(!this.webRtcConnection)
+		{
+			console.error("Client "+this.clientID+", SendRemoveNodes: this.webRtcConnection is null");
+			for (const uid of uids)
+				this.geometryService.removedNodesToSend.add(uid);
+			return;
+		}
+		if(!this.webRtcConnection.isGeometryOpen())
+		{
+			// Channel not yet open; re-queue so it retries on the next tick.
+			for (const uid of uids)
+				this.geometryService.removedNodesToSend.add(uid);
+			return;
+		}
+		const buffer = new ArrayBuffer(8+1+2+uids.length*8);
+		const size=node_encoder.encodeRemoveNodes(uids,buffer);
+		const view2 = new DataView(buffer, 0, size);
+		const sendSuccess = this.webRtcConnection.sendGeometry(view2);
+		console.log("[T+"+this.elapsedMsSinceStart()+"ms, conn+"+this.elapsedMsSinceConnected()+"ms] Sending RemoveNodes ["+uids.join(", ")+"] to Client "+this.clientID+", size: "+size+" bytes — "+
+			(sendSuccess ? "OK" : "FAILED"));
+		if(sendSuccess)
+		{
+			for (const uid of uids)
+				this.geometryService.EncodedResource(uid);
+		}
+		else
+		{
+			for (const uid of uids)
+				this.geometryService.removedNodesToSend.add(uid);
+		}
+	}
 	//! standard (e.g. /envCloudyCubemap.ktx2 -> /envCloudyCubemap_ogl.ktx2). Returns undefined
 	//! to mean "use the resource's base url" — for non-cubemaps, unknown axes standards, or
 	//! when the variant file is missing under the public path (so streaming never breaks).
