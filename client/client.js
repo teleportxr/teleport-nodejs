@@ -61,8 +61,11 @@ class Client {
 		this.clientAxesStandard=core.AxesStandard.NotInitialized;
 		this.geometryService=new gs.GeometryService(cid);
 		// Per-client avatar negotiation state. The host application drives
-		// when (and whether) policy is sent via this service.
+		// when (and whether) policy is sent via this service. The back-
+		// reference lets the service hand this client to an IAvatarImporter
+		// so the avatar node can be parented under the client's origin.
 		this.avatarService=new avatar_service.AvatarService(cid, sigSend);
+		this.avatarService.client=this;
 		this.webRtcConnected=false;
 		this.webRtcConnection=null;
 		this.currentOriginState=new OriginState();

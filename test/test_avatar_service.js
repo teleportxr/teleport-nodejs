@@ -178,6 +178,95 @@ test('handleOffer with validator: thrown validator error reports validator_error
 	assert.deepStrictEqual(msg.content.reasons, ['validator_error']);
 });
 
+// Phase-4 integration: when an importer is wired in, accepted offers
+// and default fallbacks produce a real node_uid; revoke and rejection
+// tear the node down.
+
+function makeImporter(nodeUid) {
+	const calls = [];
+	return {
+		calls,
+		importValidatedForClient: async (clientID, client, validated) => {
+			calls.push(['validated', clientID, validated.contentHash]);
+			return nodeUid;
+		},
+		importDefaultForClient: (clientID) => {
+			calls.push(['default', clientID]);
+			return nodeUid;
+		},
+		removeForClient: (clientID) => { calls.push(['remove', clientID]); },
+	};
+}
+
+test('handleOffer with validator+importer: accepted result carries the imported node_uid', async () => {
+	const sink = makeSink();
+	const svc  = new avatar_service.AvatarService(42n, sink.send, {
+		validator: makeValidator({ ok: true, reasons: [], bytes: 100, contentHash: 'sha256:aa', format: 'glb', body: Buffer.from('x') }),
+		importer:  makeImporter(4242n),
+	});
+	svc.sendPolicy(new avatars.AvatarPolicy({ policy_id: 20n, default_available: true }));
+	sink.sent.length = 0;
+	await svc.handleOffer({ policy_id: 20, have_avatar: true, url: 'https://x/a.glb', declared: { format: 'glb' } });
+	const msg = sink.sent[sink.sent.length - 1];
+	assert.strictEqual(msg.content.status, 'accepted');
+	assert.strictEqual(msg.content.node_uid, 4242);
+});
+
+test('handleOffer without avatar: default is imported and its node_uid reported', async () => {
+	const sink = makeSink();
+	const importer = makeImporter(77n);
+	const svc  = new avatar_service.AvatarService(42n, sink.send, { importer });
+	svc.sendPolicy(new avatars.AvatarPolicy({ policy_id: 21n, default_available: true }));
+	sink.sent.length = 0;
+	await svc.handleOffer({ policy_id: 21, have_avatar: false });
+	const msg = sink.sent[0];
+	assert.strictEqual(msg.content.status, 'using_default');
+	assert.strictEqual(msg.content.node_uid, 77);
+	assert.deepStrictEqual(importer.calls, [['default', 42n]]);
+});
+
+test('handleOffer without avatar and no default: rejected with no_avatar_available', async () => {
+	const sink = makeSink();
+	const importer = makeImporter(77n);
+	const svc  = new avatar_service.AvatarService(42n, sink.send, { importer });
+	svc.sendPolicy(new avatars.AvatarPolicy({ policy_id: 22n, default_available: false }));
+	sink.sent.length = 0;
+	await svc.handleOffer({ policy_id: 22, have_avatar: false });
+	const msg = sink.sent[0];
+	assert.strictEqual(msg.content.status, 'rejected');
+	assert.deepStrictEqual(msg.content.reasons, ['no_avatar_available']);
+	// Any previously imported avatar is torn down on rejection.
+	assert.deepStrictEqual(importer.calls, [['remove', 42n]]);
+});
+
+test('handleOffer with failing importer falls back to the default', async () => {
+	const sink = makeSink();
+	const svc  = new avatar_service.AvatarService(42n, sink.send, {
+		validator: makeValidator({ ok: true, reasons: [], bytes: 1, contentHash: 'sha256:aa', format: 'glb', body: Buffer.from('x') }),
+		importer:  {
+			importValidatedForClient: async () => { throw Object.assign(new Error('nope'), { code: 'import_failed' }); },
+			importDefaultForClient: () => 55n,
+			removeForClient: () => {},
+		},
+	});
+	svc.sendPolicy(new avatars.AvatarPolicy({ policy_id: 23n, default_available: true }));
+	sink.sent.length = 0;
+	await svc.handleOffer({ policy_id: 23, have_avatar: true, url: 'https://x/a.glb', declared: { format: 'glb' } });
+	const msg = sink.sent[sink.sent.length - 1];
+	assert.strictEqual(msg.content.status, 'using_default');
+	assert.strictEqual(msg.content.node_uid, 55);
+	assert.deepStrictEqual(msg.content.reasons, ['import_failed']);
+});
+
+test('handleRevoke removes the imported avatar node', () => {
+	const sink = makeSink();
+	const importer = makeImporter(88n);
+	const svc  = new avatar_service.AvatarService(42n, sink.send, { importer });
+	svc.sendPolicy(new avatars.AvatarPolicy({ policy_id: 24n, default_available: true }));
+	svc.handleRevoke({ policy_id: 24 });
+	assert.ok(importer.calls.some(c => c[0] === 'remove' && c[1] === 42n));
+});
+
 test('signaling dispatch: avatar-offer routed to handleAvatarOffer', () => {
 	// Round-trip the dispatch path: build a SignalingClient stub, attach a
 	// handler, and feed it a JSON frame. Reaching into the module the same

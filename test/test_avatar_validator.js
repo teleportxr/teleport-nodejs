@@ -9,6 +9,7 @@ const test		= require('node:test');
 const assert	= require('node:assert');
 
 const validator = require('../client/avatar_validator.js');
+const fx		= require('./helpers/gltf_fixtures.js');
 
 // SSRF blocklist ---------------------------------------------------
 
@@ -96,9 +97,9 @@ test('sniffFormat returns empty for unknown payloads', () => {
 // The fetcher contract is just `({ url, maxBytes, ... }) → { ok, body,
 // sha256, ... }`. By injecting one we keep the tests offline and
 // deterministic.
-function makeBody(text) {
+function makeBody(bufOrText) {
 	const crypto = require('node:crypto');
-	const body = Buffer.from(text);
+	const body = Buffer.isBuffer(bufOrText) ? bufOrText : Buffer.from(bufOrText);
 	const sha256 = crypto.createHash('sha256').update(body).digest('hex');
 	return { body, sha256 };
 }
@@ -112,8 +113,7 @@ function fakeFetcher(map) {
 }
 
 test('DefaultAvatarValidator: happy path returns ok with the computed hash', async () => {
-	const { body, sha256 } = makeBody(
-		String.fromCharCode(0x67, 0x6C, 0x54, 0x46) + 'binary-glb-body');
+	const { body, sha256 } = makeBody(fx.buildGlb(fx.minimalGltf(), null));
 	const v = new validator.DefaultAvatarValidator({
 		fetcher: fakeFetcher({
 			'https://x/avatar.glb': { ok: true, body, sha256, finalUrl: 'https://x/avatar.glb' },
@@ -155,8 +155,7 @@ test('DefaultAvatarValidator: rejects oversized declared file before fetching', 
 });
 
 test('DefaultAvatarValidator: surfaces a content_hash mismatch', async () => {
-	const { body, sha256 } = makeBody(
-		String.fromCharCode(0x67, 0x6C, 0x54, 0x46) + 'real-bytes');
+	const { body, sha256 } = makeBody(fx.buildGlb(fx.minimalGltf(), null));
 	const v = new validator.DefaultAvatarValidator({
 		fetcher: fakeFetcher({ 'https://x/a.glb': { ok: true, body, sha256 } }),
 	});
@@ -179,8 +178,7 @@ test('DefaultAvatarValidator: maps fetcher failure reasons through', async () =>
 });
 
 test('DefaultAvatarValidator: cache hit on content_hash skips the fetcher', async () => {
-	const { body, sha256 } = makeBody(
-		String.fromCharCode(0x67, 0x6C, 0x54, 0x46) + 'cached');
+	const { body, sha256 } = makeBody(fx.buildGlb(fx.minimalGltf(), null));
 	let fetches = 0;
 	const v = new validator.DefaultAvatarValidator({
 		fetcher: async () => { fetches++; return { ok: true, body, sha256 }; },
@@ -195,6 +193,83 @@ test('DefaultAvatarValidator: cache hit on content_hash skips the fetcher', asyn
 	assert.strictEqual(second.ok, true);
 	assert.strictEqual(second.fromCache, true);
 	assert.strictEqual(fetches, 1);
+	// Measurements survive the cache round-trip.
+	assert.ok(second.measurements);
+	assert.strictEqual(second.measurements.triangles, 12);
+});
+
+// Measurement enforcement (Phase 3 gap closure) --------------------
+
+test('DefaultAvatarValidator: a VRM is rejected under a glb-only policy and accepted under vrm', async () => {
+	const { body, sha256 } = makeBody(fx.buildGlb(fx.asVrm0(fx.minimalGltf()), null));
+	const v = new validator.DefaultAvatarValidator({
+		fetcher: fakeFetcher({ 'https://x/a.vrm': { ok: true, body, sha256 } }),
+	});
+	const rejected = await v.validate({ url: 'https://x/a.vrm' }, { formats: ['glb'] });
+	assert.strictEqual(rejected.ok, false);
+	assert.strictEqual(rejected.format, 'vrm');
+	assert.deepStrictEqual(rejected.reasons, ['format_not_allowed']);
+
+	const v2 = new validator.DefaultAvatarValidator({
+		fetcher: fakeFetcher({ 'https://x/a.vrm': { ok: true, body, sha256 } }),
+	});
+	const accepted = await v2.validate({ url: 'https://x/a.vrm' }, { formats: ['vrm'] });
+	assert.strictEqual(accepted.ok, true);
+	assert.strictEqual(accepted.format, 'vrm');
+});
+
+test('DefaultAvatarValidator: enforces the triangle cap from the fetched bytes', async () => {
+	const { body, sha256 } = makeBody(fx.buildGlb(fx.minimalGltf(), null));	// 12 triangles
+	const v = new validator.DefaultAvatarValidator({
+		fetcher: fakeFetcher({ 'https://x/a.glb': { ok: true, body, sha256 } }),
+	});
+	const r = await v.validate({ url: 'https://x/a.glb' }, { formats: ['glb'], max_triangles: 10 });
+	assert.strictEqual(r.ok, false);
+	assert.deepStrictEqual(r.reasons, ['too_many_triangles']);
+	assert.strictEqual(r.measurements.triangles, 12);
+});
+
+test('DefaultAvatarValidator: reports all failing constraints together (V6)', async () => {
+	const { body, sha256 } = makeBody(fx.buildGlb(fx.minimalGltf(), null));
+	const v = new validator.DefaultAvatarValidator({
+		fetcher: fakeFetcher({ 'https://x/a.glb': { ok: true, body, sha256 } }),
+	});
+	const r = await v.validate(
+		{ url: 'https://x/a.glb', content_hash: 'sha256:deadbeef' },
+		{ formats: ['glb'], max_triangles: 1, max_height_m: 0.5 });
+	assert.strictEqual(r.ok, false);
+	assert.deepStrictEqual(r.reasons.sort(), ['hash_mismatch', 'too_many_triangles', 'too_tall'].sort());
+});
+
+test('DefaultAvatarValidator: unparseable body fails when the policy needs a parse', async () => {
+	const { body, sha256 } = makeBody('this is not a gltf');
+	const v = new validator.DefaultAvatarValidator({
+		fetcher: fakeFetcher({ 'https://x/a.bin': { ok: true, body, sha256 } }),
+	});
+	const r = await v.validate({ url: 'https://x/a.bin' }, { formats: ['glb'] });
+	assert.strictEqual(r.ok, false);
+	assert.ok(r.reasons.includes('malformed_asset'));
+});
+
+test('DefaultAvatarValidator: unparseable body passes through with an empty requirements bag', async () => {
+	const { body, sha256 } = makeBody('opaque host-validated bytes');
+	const v = new validator.DefaultAvatarValidator({
+		fetcher: fakeFetcher({ 'https://x/a.bin': { ok: true, body, sha256 } }),
+	});
+	const r = await v.validate({ url: 'https://x/a.bin' }, {});
+	assert.strictEqual(r.ok, true);
+	assert.deepStrictEqual(r.reasons, []);
+});
+
+test('DefaultAvatarValidator: external references in the asset are refused', async () => {
+	const json = fx.minimalGltf({ buffers: [{ uri: 'https://elsewhere.example/x.bin', byteLength: 4 }] });
+	const { body, sha256 } = makeBody(fx.buildGlb(json, null));
+	const v = new validator.DefaultAvatarValidator({
+		fetcher: fakeFetcher({ 'https://x/a.glb': { ok: true, body, sha256 } }),
+	});
+	const r = await v.validate({ url: 'https://x/a.glb' }, { formats: ['glb'] });
+	assert.strictEqual(r.ok, false);
+	assert.deepStrictEqual(r.reasons, ['external_reference']);
 });
 
 

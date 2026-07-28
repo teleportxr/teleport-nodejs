@@ -1,14 +1,18 @@
 'use strict';
-// Per-client server-side state for avatar negotiation. Phase 3 of the
-// implementation in plans/avatars_implementation.md: hand an offered
-// URL to an IAvatarValidator and surface its verdict. With no
-// validator wired the service falls back to the Phase-2 behaviour
-// (always reply using_default), so existing deployments keep working.
+// Per-client server-side state for avatar negotiation. Phases 3–4 of
+// the implementation in plans/avatars_implementation.md: hand an
+// offered URL to an IAvatarValidator, then hand the validated bytes to
+// an IAvatarImporter which turns them into a scene node streamed to
+// every peer. With no validator wired the service falls back to the
+// Phase-2 behaviour (always reply using_default); with no importer the
+// results carry node_uid=0 as before, so existing deployments keep
+// working.
 //
 // One AvatarService is owned by each Client; messages are dispatched in
 // from the signaling layer.
 
 const avatars = require('../protocol/avatars.js');
+const { redactUrl } = require('../utils/redact.js');
 
 // Threshold above which a 'pending' frame is sent so the client can
 // show progress (plan §4.1 / §9). Picked to be just under one second
@@ -29,6 +33,14 @@ class AvatarService {
 		// Optional IAvatarValidator. When null the service keeps its
 		// Phase-2 behaviour: any offer is answered with using_default.
 		this.validator		= (opts && opts.validator) || null;
+		// Optional IAvatarImporter. When set, accepted offers and
+		// default fallbacks produce a real scene node whose uid is
+		// reported in avatar-result.node_uid.
+		this.importer		= (opts && opts.importer) || null;
+		// Back-reference to the owning Client, set by the Client
+		// constructor; handed to the importer so the avatar node can be
+		// parented under the client's origin.
+		this.client			= null;
 	}
 
 	// Send (or re-send) the policy to the owning client. The client is
@@ -51,9 +63,12 @@ class AvatarService {
 	async handleOffer(offerJson) {
 		const offer = avatars.parseAvatarOffer(offerJson);
 		this.lastOffer = offer;
+		// The URL may carry a bearer token; only ever log it redacted
+		// (plans/avatars_plan.md §8).
 		console.log('avatar-offer  ← client ' + this.clientID +
 			' policy_id=' + offer.policy_id +
-			' have_avatar=' + offer.have_avatar);
+			' have_avatar=' + offer.have_avatar +
+			(offer.have_avatar && offer.url ? ' url=' + redactUrl(offer.url) : ''));
 
 		if (!this.currentPolicy ||
 			BigInt(offer.policy_id || 0n) !== BigInt(this.currentPolicy.policy_id))
@@ -72,14 +87,7 @@ class AvatarService {
 		// Without a validator, or without an offered URL, fall straight
 		// back to the default avatar (this is also the Phase-2 path).
 		if (!this.validator || !offer.have_avatar || !offer.url) {
-			this._reply({
-				policy_id:		offer.policy_id,
-				status:			'using_default',
-				node_uid:		0n,
-				using_default:	true,
-				delivery:		'import',
-				reasons:		[],
-			});
+			this._replyDefaultOrReject(offer.policy_id, []);
 			return;
 		}
 
@@ -107,34 +115,62 @@ class AvatarService {
 		clearTimeout(pendingTimer);
 
 		if (result.ok) {
+			// Phase 4: turn the validated bytes into a scene node so
+			// peers receive the avatar through the geometry pipeline.
+			let nodeUid = 0n;
+			if (this.importer) {
+				try {
+					nodeUid = await this.importer.importValidatedForClient(this.clientID, this.client, result);
+				} catch (err) {
+					this._replyDefaultOrReject(offer.policy_id, [err.code || 'import_failed']);
+					void pendingSent;
+					return;
+				}
+			}
 			this._reply({
 				policy_id:		offer.policy_id,
 				status:			'accepted',
-				node_uid:		0n,
+				node_uid:		nodeUid,
 				using_default:	false,
 				delivery:		'import',
 				reasons:		[],
 			});
-		} else if (this.currentPolicy.default_available) {
+		} else {
+			this._replyDefaultOrReject(offer.policy_id, result.reasons || ['validation_failed']);
+		}
+		void pendingSent;
+	}
+
+	// Fall back to the default avatar when the policy allows it,
+	// otherwise reject. `reasons` explains why the client's own avatar
+	// was not used (empty when it simply didn't offer one).
+	_replyDefaultOrReject(policy_id, reasons) {
+		if (this.currentPolicy && this.currentPolicy.default_available) {
+			let nodeUid = 0n;
+			if (this.importer)
+				nodeUid = this.importer.importDefaultForClient(this.clientID, this.client) || 0n;
 			this._reply({
-				policy_id:		offer.policy_id,
+				policy_id:		policy_id,
 				status:			'using_default',
-				node_uid:		0n,
+				node_uid:		nodeUid,
 				using_default:	true,
 				delivery:		'import',
-				reasons:		result.reasons || [],
+				reasons:		reasons,
 			});
 		} else {
+			// No default to fall back to: drop any previously imported
+			// avatar and reject (plan §11 edge case 4).
+			if (this.importer)
+				this.importer.removeForClient(this.clientID);
 			this._reply({
-				policy_id:		offer.policy_id,
+				policy_id:		policy_id,
 				status:			'rejected',
 				node_uid:		0n,
 				using_default:	false,
 				delivery:		'import',
-				reasons:		result.reasons || ['validation_failed'],
+				reasons:		reasons.length ? reasons : ['no_avatar_available'],
 			});
 		}
-		void pendingSent;
 	}
 
 	// Handle a client-initiated revoke (rare in Phase 2; provided for
@@ -143,11 +179,13 @@ class AvatarService {
 		const policy_id = revokeJson && revokeJson.policy_id != null
 			? BigInt(revokeJson.policy_id) : 0n;
 		console.log('avatar-revoke ← client ' + this.clientID + ' policy_id=' + policy_id);
-		// In Phase 2 a revoke from the client just drops cached state; the
-		// server keeps the same policy in force and a new offer is expected
-		// next.
+		// A revoke from the client withdraws its avatar: drop cached
+		// state and remove any imported node. The server keeps the same
+		// policy in force and a new offer is expected next.
 		this.lastOffer = null;
 		this.lastResult = null;
+		if (this.importer)
+			this.importer.removeForClient(this.clientID);
 	}
 
 	_reply(result, record = true) {

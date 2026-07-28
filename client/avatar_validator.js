@@ -17,6 +17,8 @@ const http		= require('node:http');
 const net		= require('node:net');
 const { URL }	= require('node:url');
 
+const gltf		= require('./gltf_measure.js');
+
 // SSRF blocklist ------------------------------------------------------
 // Mirrors plans/avatars_plan.md §7 (SSRF row) and §5 V3. Refuses
 // loopback, link-local, private, broadcast, metadata-service and the
@@ -227,10 +229,10 @@ class LruCache
 	get size() { return this.map.size; }
 }
 
-// Sniff the leading bytes to confirm the declared format. Phase 3
-// supports GLB (binary glTF) by magic + glTF (JSON) by leading brace.
-// Anything else is passed through as ok=true; the host-supplied
-// validator can do stricter checking. Returns the canonical short name.
+// Sniff the leading bytes for a quick format guess. Retained as the
+// fallback when the body is unparseable and the policy has no
+// requirements that need a parse; the authoritative format now comes
+// from gltf_measure.detectFormat (which distinguishes VRM from GLB).
 function sniffFormat(buf)
 {
 	if (!buf || buf.length < 4) return '';
@@ -246,9 +248,11 @@ function sniffFormat(buf)
 
 // IAvatarValidator -------------------------------------------------
 // Reference interface; subclass and override `validate`. The default
-// implementation below is sufficient for the Phase 3 exit criteria;
-// host applications that want a stricter pipeline (e.g. real glTF
-// parse, triangle count, proof check) supply their own.
+// implementation below fetches, hashes, parses the glTF/GLB/VRM
+// container and enforces the measurable requirement keys (triangles,
+// bounds, textures, licence tags, humanoid skeleton) via
+// gltf_measure.js. Host applications that want a stricter pipeline
+// (e.g. proof checking, retarget validation) supply their own.
 class IAvatarValidator
 {
 	async validate(/* offer, requirements */)
@@ -274,6 +278,7 @@ class DefaultAvatarValidator extends IAvatarValidator
 	{
 		const reasons	= [];
 		const req		= requirements || {};
+		const start		= Date.now();
 		const formats	= Array.isArray(req.formats) ? req.formats.map(s => String(s).toLowerCase()) : [];
 		const maxBytes	= Number.isFinite(req.max_file_bytes) ? Math.min(req.max_file_bytes, this.defaultMaxBytes) : this.defaultMaxBytes;
 		const timeoutMs	= Number.isFinite(req.fetch_timeout_ms) ? req.fetch_timeout_ms : this.defaultTimeoutMs;
@@ -291,7 +296,7 @@ class DefaultAvatarValidator extends IAvatarValidator
 		if (offer.content_hash && this.cache.get(offer.content_hash))
 		{
 			const cached = this.cache.get(offer.content_hash);
-			return { ok: cached.ok, reasons: cached.reasons.slice(), bytes: cached.bytes, contentHash: offer.content_hash, format: cached.format, fromCache: true };
+			return { ok: cached.ok, reasons: cached.reasons.slice(), bytes: cached.bytes, contentHash: offer.content_hash, format: cached.format, measurements: cached.measurements || null, body: cached.body || null, fromCache: true };
 		}
 
 		const fetched = await this.fetcher({
@@ -304,10 +309,34 @@ class DefaultAvatarValidator extends IAvatarValidator
 		if (!fetched.ok)
 			return { ok: false, reasons: [fetched.reason || 'download_failed'], bytes: 0, contentHash: '', format: '' };
 
+		// The fetch timeout is a hard wall-clock budget for the whole
+		// fetch + parse + measure step (plan §5 V2); if the download
+		// alone consumed it, don't start parsing.
+		if (Date.now() - start > timeoutMs)
+			return { ok: false, reasons: ['fetch_timeout'], bytes: fetched.body.length, contentHash: '', format: '' };
+
 		const bytes			= fetched.body.length;
 		const contentHash	= 'sha256:' + fetched.sha256;
-		const sniffed		= sniffFormat(fetched.body);
-		const format		= sniffed || (declared.format || '').toLowerCase();
+
+		// Parse the container and measure it. An unparseable body is
+		// fatal when the policy restricts formats or asks for anything
+		// only a parse can measure; with an empty requirements bag the
+		// legacy pass-through behaviour is kept (format from sniffing).
+		let format		= '';
+		let measurements = null;
+		let parsed		= null;
+		try { parsed = gltf.parseAsset(fetched.body); }
+		catch (e) { parsed = null; }
+		if (parsed)
+		{
+			measurements = gltf.measureAsset(parsed);
+			format = measurements.format;
+			reasons.push(...gltf.checkRequirements(measurements, req));
+		}
+		else if (formats.length || gltf.requiresMeasurement(req))
+			reasons.push('malformed_asset');
+		else
+			format = sniffFormat(fetched.body) || (declared.format || '').toLowerCase();
 
 		if (offer.content_hash && offer.content_hash !== contentHash)
 			reasons.push('hash_mismatch');
@@ -317,7 +346,10 @@ class DefaultAvatarValidator extends IAvatarValidator
 			reasons.push('file_too_large');
 
 		const ok = reasons.length === 0;
-		const result = { ok, reasons: reasons.slice(), bytes, contentHash, format };
+		// The body rides along so an importer can re-host the exact bytes
+		// that were validated (import mode, plan §2.1) without a second
+		// fetch. The cache is bounded by maxBytes, which accounts for it.
+		const result = { ok, reasons: reasons.slice(), bytes, contentHash, format, measurements, body: fetched.body };
 		this.cache.set(contentHash, result, bytes);
 		return result;
 	}
