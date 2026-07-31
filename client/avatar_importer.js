@@ -1,32 +1,44 @@
 'use strict';
-// Phase 4 of the avatar implementation plan: import mode. A validated
-// avatar becomes a node in the server scene and is streamed to peers
-// through the existing geometry pipeline, so peers can actually see
-// each other.
+// Turning an accepted avatar into something peers can see.
 //
-// In this server the geometry pipeline delivers meshes as URL pointers
-// that clients fetch over HTTP (see scene/node.js MeshComponent and the
-// MeshPointer resource type). "Importing" therefore means:
-//   1. re-hosting the validated bytes at a server-controlled URL (the
-//      host application supplies a `publish` callback — the library has
-//      no HTTP server of its own), and
-//   2. creating a node carrying a MeshComponent with that URL, parented
-//      under the owning client's origin node so it tracks the player.
-// Peers never see the original offer URL (plans/avatars_plan.md §8):
-// they fetch the server-hosted copy like any other scene resource.
+// The geometry pipeline delivers meshes as URL pointers that clients
+// fetch over HTTP themselves (see scene/node.js MeshComponent and the
+// MeshPointer resource type). An avatar is therefore just a node with a
+// MeshComponent, parented under the owning client's origin node so it
+// tracks the player. Peers receive it as ordinary scenery and are never
+// told it is an avatar (plans/avatars_plan.md §2.2).
+//
+// The two delivery modes differ only in whose URL the pointer carries
+// (plans/avatars_plan.md §2.1):
+//   * relay (the default) — the owner's own offer URL, so peers fetch
+//     straight from the avatar host and the server serves no bytes;
+//   * import (the fallback) — the validated bytes re-hosted at a
+//     server-controlled URL via the host application's `publish`
+//     callback, so the owner's URL is never exposed.
 //
 // IAvatarImporter is the pluggable interface; DefaultAvatarImporter is
 // the implementation used by the reference server. Hosts with their own
 // asset pipeline (e.g. re-encoding to draco/ktx2) supply their own.
 
 const nd = require('../scene/node.js');
+const core = require('../core/core.js');
+const resources = require('../scene/resources.js');
 const { redactUrl } = require('../utils/redact.js');
 
 class IAvatarImporter
 {
-	//! Import a validated avatar for a client. `validated` is the
-	//! validator result ({ body, contentHash, format, ... }). Returns
-	//! (a promise of) the root node uid of the imported sub-tree.
+	//! Relay a validated avatar: create the node pointing at the client's
+	//! own offer URL, so peers fetch it from the avatar host directly.
+	//! Returns the root node uid. This is the default delivery mode.
+	relayForClient(/* clientID, client, offerUrl */)
+	{
+		throw new Error('IAvatarImporter.relayForClient is abstract');
+	}
+	//! Import a validated avatar: re-host the bytes and point the node at
+	//! the server's own copy. `validated` is the validator result
+	//! ({ body, contentHash, format, ... }). Returns (a promise of) the
+	//! root node uid of the imported sub-tree. This is the fallback for
+	//! when relaying is refused or impossible.
 	async importValidatedForClient(/* clientID, client, validated */)
 	{
 		throw new Error('IAvatarImporter.importValidatedForClient is abstract');
@@ -64,14 +76,18 @@ class DefaultAvatarImporter extends IAvatarImporter
 		this.clientManager	= opts.clientManager || null;
 		this.publish		= opts.publish || null;
 		this.defaultUrl		= opts.defaultUrl || '';
-		this.nodeByClient	= new Map();	// clientID → { nodeUid, url }
+		// clientID → { nodeUid, url, relayed, validated, hostedUrl }.
+		// `validated` is kept for relayed avatars only, so the asset can
+		// be re-hosted on demand if a peer fails to fetch the owner's
+		// url (see hostedUrlForClient).
+		this.nodeByClient	= new Map();
 	}
 
 	//! Create (or replace) the avatar node for a client from a URL the
 	//! server already serves. The node lives in the shared scene, so
 	//! every client — present and future — receives it via the normal
 	//! streaming pass. Returns the node uid.
-	importUrlForClient(clientID, client, url)
+	importUrlForClient(clientID, client, url, meta = {})
 	{
 		const existing = this.nodeByClient.get(clientID);
 		if (existing && existing.url === url)
@@ -87,16 +103,48 @@ class DefaultAvatarImporter extends IAvatarImporter
 		node.holder_client_id = clientID;
 		node.setMeshComponent(url);
 		const uid = this.scene.InsertNode(node);
-		this.nodeByClient.set(clientID, { nodeUid: uid, url });
+		this.nodeByClient.set(clientID, {
+			nodeUid:	uid,
+			url,
+			relayed:	!!meta.relayed,
+			validated:	meta.validated || null,
+			hostedUrl:	'',
+		});
 		// Kick off streaming to the owner immediately; everyone else
 		// picks the node up on their next UpdateStreaming tick.
 		if (client && client.geometryService)
 			client.geometryService.StreamNode(uid);
-		console.log('avatar node ' + uid + ' (' + redactUrl(url) + ') imported for client ' + clientID);
+		console.log('avatar node ' + uid + ' (' + redactUrl(url) + ') ' +
+			(meta.relayed ? 'relayed' : 'imported') + ' for client ' + clientID);
 		return uid;
 	}
 
+	//! Relay: point the node at the client's own offer url so peers fetch
+	//! it straight from the avatar host. `validated` is retained so the
+	//! asset can still be re-hosted for any peer that fails to fetch it.
+	relayForClient(clientID, client, offerUrl, validated)
+	{
+		if (typeof offerUrl !== 'string' || !offerUrl.length)
+			throw Object.assign(new Error('no url to relay'), { code: 'relay_failed' });
+		return this.importUrlForClient(clientID, client, offerUrl, { relayed: true, validated: validated || null });
+	}
+
 	async importValidatedForClient(clientID, client, validated)
+	{
+		const url = await this._publishValidated(validated);
+		return this.importUrlForClient(clientID, client, url, { relayed: false });
+	}
+
+	importDefaultForClient(clientID, client)
+	{
+		if (!this.defaultUrl)
+			return 0n;
+		// The default is already served by the host, so pointing at it is
+		// not relaying anyone's private url.
+		return this.importUrlForClient(clientID, client, this.defaultUrl, { relayed: false });
+	}
+
+	async _publishValidated(validated)
 	{
 		if (!this.publish)
 			throw Object.assign(new Error('no publish callback configured'), { code: 'import_failed' });
@@ -109,20 +157,57 @@ class DefaultAvatarImporter extends IAvatarImporter
 		});
 		if (typeof url !== 'string' || !url.length)
 			throw Object.assign(new Error('publish returned no url'), { code: 'import_failed' });
-		return this.importUrlForClient(clientID, client, url);
+		return url;
 	}
 
-	importDefaultForClient(clientID, client)
+	//! A server-hosted url for a relayed client's avatar, published on
+	//! first request and cached thereafter. Used to downgrade a single
+	//! peer to import when it reports the relayed url unfetchable
+	//! (plans/avatars_plan.md §5.1). Returns '' when this client's avatar
+	//! is not relayed, or when there are no bytes to re-host.
+	async hostedUrlForClient(clientID)
 	{
-		if (!this.defaultUrl)
-			return 0n;
-		return this.importUrlForClient(clientID, client, this.defaultUrl);
+		const entry = this.nodeByClient.get(clientID);
+		if (!entry || !entry.relayed)
+			return '';
+		if (entry.hostedUrl)
+			return entry.hostedUrl;
+		if (!entry.validated || !this.publish)
+			return '';
+		entry.hostedUrl = await this._publishValidated(entry.validated);
+		return entry.hostedUrl;
 	}
 
 	nodeUidForClient(clientID)
 	{
 		const entry = this.nodeByClient.get(clientID);
 		return entry ? entry.nodeUid : 0n;
+	}
+
+	//! The uid of the mesh-pointer resource carrying this client's avatar,
+	//! or 0n if it has none. Lets the ResourceLost path recognise an
+	//! avatar asset among all the other resources a client may lose.
+	meshResourceUidForClient(clientID)
+	{
+		const entry = this.nodeByClient.get(clientID);
+		if (!entry || !entry.url)
+			return 0n;
+		return resources.GetOrAddResourceUidFromUrl(core.GeometryPayloadType.MeshPointer, entry.url);
+	}
+
+	//! Reverse of meshResourceUidForClient: which client's relayed avatar
+	//! does this resource uid belong to? Returns null if none.
+	relayedClientForMeshResourceUid(uid)
+	{
+		for (const [clientID, entry] of this.nodeByClient)
+		{
+			if (!entry.relayed || !entry.url)
+				continue;
+			const resUid = resources.GetOrAddResourceUidFromUrl(core.GeometryPayloadType.MeshPointer, entry.url);
+			if (BigInt(resUid) === BigInt(uid))
+				return clientID;
+		}
+		return null;
 	}
 
 	//! Remove the avatar node of a client: delete it from the scene and

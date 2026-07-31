@@ -38,9 +38,10 @@ class SignalingClient {
 		this.handleAvatarOffer=null;
 		this.handleAvatarRevoke=null;
 		// Session-level capabilities advertised by the client in its
-		// `connect` message. Defaults to all-false so that an older
-		// client which omits the field is treated conservatively.
-		this.capabilities = { avatar_relay: false };
+		// `connect` message. A general extension point with no keys
+		// currently defined; unknown keys are ignored so the set can
+		// grow without breaking older clients.
+		this.capabilities = {};
 	}
 	ChangeSignalingState(newState) {
 		console.log(
@@ -91,7 +92,7 @@ function processDisconnection(clientID,signalingClient){
 }
 function processInitialRequest(clientID, signalingClient, content) {
 	// Free-form capability bag: a missing / malformed object leaves
-	// capabilities at their default (all-false) state.
+	// capabilities empty.
 	if (content && typeof content === 'object' && content.capabilities) {
 		signalingClient.capabilities = avatars.decodeCapabilities(content.capabilities);
 	}

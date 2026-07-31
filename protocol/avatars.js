@@ -12,23 +12,26 @@ const TELEPORT_SIGNAL_TYPE_AVATAR_POLICY        = 'avatar-policy';
 const TELEPORT_SIGNAL_TYPE_AVATAR_OFFER         = 'avatar-offer';
 const TELEPORT_SIGNAL_TYPE_AVATAR_RESULT        = 'avatar-result';
 const TELEPORT_SIGNAL_TYPE_AVATAR_REVOKE        = 'avatar-revoke';
-const TELEPORT_SIGNAL_TYPE_PEER_AVATAR          = 'peer-avatar';
-const TELEPORT_SIGNAL_TYPE_PEER_AVATAR_FAILED   = 'peer-avatar-failed';
+
+// There are deliberately no peer-facing avatar messages: a client is only
+// ever told about its own avatar (plans/avatars_plan.md §2.2). Another
+// client's avatar reaches it as an ordinary node carrying a MeshPointer,
+// through the geometry pipeline.
 
 // SignalingCapabilities ------------------------------------------------
-// Free-form capability bag advertised on the `connect` envelope. Unknown
-// keys are ignored on read and dropped on write — first-class flags only.
+// Free-form capability bag advertised on the `connect` envelope. It is a
+// general signaling-level extension point; no keys are defined at
+// present. Unknown keys are ignored on read and dropped on write, so the
+// set can grow without breaking older peers.
 
 function decodeCapabilities(raw) {
-	const out = { avatar_relay: false };
-	if (raw && typeof raw === 'object' && typeof raw.avatar_relay === 'boolean') {
-		out.avatar_relay = raw.avatar_relay;
-	}
-	return out;
+	void raw;
+	return {};
 }
 
 function encodeCapabilities(caps) {
-	return { avatar_relay: !!(caps && caps.avatar_relay) };
+	void caps;
+	return {};
 }
 
 // AvatarPolicy ---------------------------------------------------------
@@ -109,7 +112,7 @@ function encodeAvatarOffer(o) {
 	return j;
 }
 
-// AvatarResult / Revoke / Peer messages --------------------------------
+// AvatarResult / Revoke -------------------------------------------------
 
 function encodeAvatarResult(r) {
 	return {
@@ -117,7 +120,10 @@ function encodeAvatarResult(r) {
 		status:        r.status || 'rejected',           // accepted | rejected | pending
 		node_uid:      Number(r.node_uid || 0n),
 		using_default: !!r.using_default,
-		delivery:      r.delivery || 'import',           // import | relay
+		// relay (default) — the mesh pointer carries the owner's own url;
+		// import — the server re-hosted the bytes and the pointer carries
+		// the server's url. See plans/avatars_plan.md §2.1.
+		delivery:      r.delivery || 'relay',
 		reasons:       Array.isArray(r.reasons) ? r.reasons.slice() : []
 	};
 }
@@ -126,25 +132,20 @@ function encodeAvatarRevoke(r) {
 	return { policy_id: Number(r.policy_id || 0n), reason: r.reason || '' };
 }
 
-function encodePeerAvatar(p) {
-	const j = {
-		peer_client_id: Number(p.peer_client_id || 0n),
-		peer_node_uid:  Number(p.peer_node_uid  || 0n),
-		revoked:        !!p.revoked
-	};
-	if (p.url          != null) j.url          = String(p.url);
-	if (p.content_hash != null) j.content_hash = String(p.content_hash);
-	if (p.format       != null) j.format       = String(p.format);
-	if (p.proof)               j.proof        = Object.assign({}, p.proof);
-	return j;
-}
+// Relayable urls ---------------------------------------------------------
+// Clients pick a decoder for a fetched mesh pointer from the url's file
+// extension, so a url without a recognised one cannot be relayed — the
+// server imports it instead (plans/avatars_plan.md §11.11, D10).
 
-function parsePeerAvatarFailed(j) {
-	const f = { peer_node_uid: 0n, reason: '' };
-	if (!j || typeof j !== 'object') return f;
-	if (j.peer_node_uid != null) f.peer_node_uid = BigInt(j.peer_node_uid);
-	if (j.reason        != null) f.reason        = String(j.reason);
-	return f;
+const RELAYABLE_EXTENSIONS = ['.glb', '.vrm', '.gltf'];
+
+function isRelayableUrl(url) {
+	if (typeof url !== 'string' || !url.length)
+		return false;
+	// Strip query and fragment first: '…/a.glb?token=x' is relayable,
+	// '…/asset?format=glb' is not.
+	const path = url.split('#')[0].split('?')[0].toLowerCase();
+	return RELAYABLE_EXTENSIONS.some((ext) => path.endsWith(ext));
 }
 
 module.exports = {
@@ -152,11 +153,9 @@ module.exports = {
 	TELEPORT_SIGNAL_TYPE_AVATAR_OFFER,
 	TELEPORT_SIGNAL_TYPE_AVATAR_RESULT,
 	TELEPORT_SIGNAL_TYPE_AVATAR_REVOKE,
-	TELEPORT_SIGNAL_TYPE_PEER_AVATAR,
-	TELEPORT_SIGNAL_TYPE_PEER_AVATAR_FAILED,
 	decodeCapabilities, encodeCapabilities,
 	AvatarPolicy, parseAvatarPolicy,
 	parseAvatarOffer, encodeAvatarOffer,
 	encodeAvatarResult, encodeAvatarRevoke,
-	encodePeerAvatar, parsePeerAvatarFailed,
+	RELAYABLE_EXTENSIONS, isRelayableUrl,
 };

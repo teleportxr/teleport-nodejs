@@ -9,27 +9,46 @@ const assert = require('node:assert');
 
 const avatars = require('../protocol/avatars.js');
 
-test('decodeCapabilities returns all-false for missing / empty / non-object input', () => {
-	assert.deepStrictEqual(avatars.decodeCapabilities(undefined), { avatar_relay: false });
-	assert.deepStrictEqual(avatars.decodeCapabilities(null),      { avatar_relay: false });
-	assert.deepStrictEqual(avatars.decodeCapabilities({}),        { avatar_relay: false });
-	assert.deepStrictEqual(avatars.decodeCapabilities('nope'),    { avatar_relay: false });
+test('decodeCapabilities returns an empty bag for any input', () => {
+	// No signaling capabilities are defined at present: the object is an
+	// extension point only. Avatars deliberately need none — relay is the
+	// default and requires no negotiation (plans/avatars_plan.md D7).
+	assert.deepStrictEqual(avatars.decodeCapabilities(undefined), {});
+	assert.deepStrictEqual(avatars.decodeCapabilities(null),      {});
+	assert.deepStrictEqual(avatars.decodeCapabilities({}),        {});
+	assert.deepStrictEqual(avatars.decodeCapabilities('nope'),    {});
 });
 
-test('decodeCapabilities reads avatar_relay and ignores unknown future keys', () => {
-	const caps = avatars.decodeCapabilities({ avatar_relay: true, future_flag: 'whatever' });
-	assert.strictEqual(caps.avatar_relay, true);
-	assert.strictEqual('future_flag' in caps, false);
+test('decodeCapabilities ignores unknown keys rather than failing on them', () => {
+	const caps = avatars.decodeCapabilities({ future_flag: 'whatever', avatar_relay: true });
+	assert.deepStrictEqual(caps, {});
 });
 
-test('decodeCapabilities ignores non-boolean avatar_relay', () => {
-	const caps = avatars.decodeCapabilities({ avatar_relay: 'yes' });
-	assert.strictEqual(caps.avatar_relay, false);
+test('encodeCapabilities emits an empty bag', () => {
+	assert.deepStrictEqual(avatars.encodeCapabilities({ junk: 'x' }), {});
+	assert.deepStrictEqual(avatars.encodeCapabilities({}),            {});
 });
 
-test('encodeCapabilities drops unknown keys and coerces to boolean', () => {
-	assert.deepStrictEqual(avatars.encodeCapabilities({ avatar_relay: 1, junk: 'x' }), { avatar_relay: true });
-	assert.deepStrictEqual(avatars.encodeCapabilities({}),                              { avatar_relay: false });
+test('isRelayableUrl accepts the extensions clients can decode', () => {
+	assert.strictEqual(avatars.isRelayableUrl('https://a.example/u/42.glb'),  true);
+	assert.strictEqual(avatars.isRelayableUrl('https://a.example/u/42.vrm'),  true);
+	assert.strictEqual(avatars.isRelayableUrl('https://a.example/u/42.gltf'), true);
+	assert.strictEqual(avatars.isRelayableUrl('https://a.example/u/42.GLB'),  true);
+});
+
+test('isRelayableUrl ignores query and fragment when finding the extension', () => {
+	// A bearer token after the extension is fine; the client still sees .glb.
+	assert.strictEqual(avatars.isRelayableUrl('https://a.example/u/42.glb?token=abc'), true);
+	assert.strictEqual(avatars.isRelayableUrl('https://a.example/u/42.glb#frag'),      true);
+	// But an extension that only appears in the query is not usable.
+	assert.strictEqual(avatars.isRelayableUrl('https://a.example/u/42?format=glb'), false);
+});
+
+test('isRelayableUrl rejects urls a client could not pick a decoder for', () => {
+	assert.strictEqual(avatars.isRelayableUrl('https://a.example/u/42'),     false);
+	assert.strictEqual(avatars.isRelayableUrl('https://a.example/u/42.png'), false);
+	assert.strictEqual(avatars.isRelayableUrl(''),                           false);
+	assert.strictEqual(avatars.isRelayableUrl(undefined),                    false);
 });
 
 test('AvatarPolicy: toJSON / parseAvatarPolicy round-trip', () => {
@@ -98,31 +117,17 @@ test('encodeAvatarRevoke produces the expected envelope', () => {
 	);
 });
 
-test('encodePeerAvatar carries url / hash / format / proof', () => {
-	const wire = avatars.encodePeerAvatar({
-		peer_client_id: 100n,
-		peer_node_uid: 200n,
-		url: 'https://example.com/a.glb',
-		content_hash: 'sha256:ff',
-		format: 'glb',
-		proof: { scheme: 'well-known-url', value: 'https://example.com/.well-known/avatar-binding' },
-	});
-	assert.strictEqual(wire.peer_client_id, 100);
-	assert.strictEqual(wire.peer_node_uid, 200);
-	assert.strictEqual(wire.url, 'https://example.com/a.glb');
-	assert.strictEqual(wire.content_hash, 'sha256:ff');
-	assert.strictEqual(wire.format, 'glb');
-	assert.strictEqual(wire.proof.scheme, 'well-known-url');
-	assert.strictEqual(wire.revoked, false);
+test('there are no peer-facing avatar messages', () => {
+	// A client is only ever told about its own avatar; another client's
+	// arrives as ordinary geometry (plans/avatars_plan.md §2.2). Guards
+	// against the deleted peer-avatar codecs creeping back in.
+	for (const name of ['encodePeerAvatar', 'parsePeerAvatar', 'encodePeerAvatarFailed', 'parsePeerAvatarFailed'])
+		assert.strictEqual(name in avatars, false, name + ' should not exist');
+	for (const key of Object.keys(avatars))
+		assert.strictEqual(/^TELEPORT_SIGNAL_TYPE_PEER/.test(key), false, key + ' should not exist');
 });
 
-test('parsePeerAvatarFailed round-trips peer_node_uid and reason', () => {
-	const f = avatars.parsePeerAvatarFailed({ peer_node_uid: '200', reason: '404' });
-	assert.strictEqual(f.peer_node_uid, 200n);
-	assert.strictEqual(f.reason, '404');
-});
-
-test('signaling.SignalingClient defaults capabilities to all-false', () => {
+test('signaling.SignalingClient defaults capabilities to an empty bag', () => {
 	// Constructed without a websocket — fine for testing the field shape only.
 	const signaling = require('../signaling.js');
 	// SignalingClient isn't exported; reach into the module like other tests do.
@@ -136,5 +141,5 @@ test('signaling.SignalingClient defaults capabilities to all-false', () => {
 	m._compile(src + '\nmodule.exports._SignalingClient = SignalingClient;\n', m.filename);
 	const SignalingClient = m.exports._SignalingClient;
 	const c = new SignalingClient('1.2.3.4', /* ws */ null, 1n);
-	assert.deepStrictEqual(c.capabilities, { avatar_relay: false });
+	assert.deepStrictEqual(c.capabilities, {});
 });

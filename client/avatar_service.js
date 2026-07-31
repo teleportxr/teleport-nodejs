@@ -37,6 +37,10 @@ class AvatarService {
 		// default fallbacks produce a real scene node whose uid is
 		// reported in avatar-result.node_uid.
 		this.importer		= (opts && opts.importer) || null;
+		// Server-wide relay switch. Relay is the default delivery mode
+		// (plans/avatars_plan.md §2.1); set false for deployments where
+		// an avatar url must never reach other clients.
+		this.allowRelay		= !(opts && opts.allowRelay === false);
 		// Back-reference to the owning Client, set by the Client
 		// constructor; handed to the importer so the avatar node can be
 		// parented under the client's origin.
@@ -115,12 +119,17 @@ class AvatarService {
 		clearTimeout(pendingTimer);
 
 		if (result.ok) {
-			// Phase 4: turn the validated bytes into a scene node so
-			// peers receive the avatar through the geometry pipeline.
+			// The avatar becomes a scene node whose mesh is a pointer to
+			// a url the peers fetch themselves. Relay (the owner's own
+			// url) unless something rules it out, in which case re-host
+			// and point at our copy instead.
+			const delivery = this._chooseDelivery(offer);
 			let nodeUid = 0n;
 			if (this.importer) {
 				try {
-					nodeUid = await this.importer.importValidatedForClient(this.clientID, this.client, result);
+					nodeUid = delivery === 'relay'
+						? this.importer.relayForClient(this.clientID, this.client, offer.url, result)
+						: await this.importer.importValidatedForClient(this.clientID, this.client, result);
 				} catch (err) {
 					this._replyDefaultOrReject(offer.policy_id, [err.code || 'import_failed']);
 					void pendingSent;
@@ -132,13 +141,35 @@ class AvatarService {
 				status:			'accepted',
 				node_uid:		nodeUid,
 				using_default:	false,
-				delivery:		'import',
+				delivery:		delivery,
 				reasons:		[],
 			});
 		} else {
 			this._replyDefaultOrReject(offer.policy_id, result.reasons || ['validation_failed']);
 		}
 		void pendingSent;
+	}
+
+	// Relay or import? Relay is the default; each of the three checks
+	// below is a reason the owner's url cannot go out to peers
+	// (plans/avatars_plan.md §2.1). None of them is a rejection — the
+	// avatar is accepted either way.
+	_chooseDelivery(offer) {
+		if (!this.allowRelay) {
+			console.log('avatar for client ' + this.clientID + ': import (relay disabled server-wide)');
+			return 'import';
+		}
+		if (offer.allow_relay === false) {
+			console.log('avatar for client ' + this.clientID + ': import (owner opted out of relay)');
+			return 'import';
+		}
+		if (!avatars.isRelayableUrl(offer.url)) {
+			// Clients choose a decoder by file extension, so a url without
+			// a recognised one has to be re-hosted under a name we control.
+			console.log('avatar for client ' + this.clientID + ': import (url has no relayable extension)');
+			return 'import';
+		}
+		return 'relay';
 	}
 
 	// Fall back to the default avatar when the policy allows it,

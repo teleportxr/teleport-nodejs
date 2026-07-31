@@ -76,6 +76,11 @@ class Client {
 		// When true, the SetupCommand tells the client to send its microphone track
 		// (needed for the audio SFU). Set by the host before Start(); default off.
 		this.acceptMicrophone=false;
+		// resource uid → url to send this client instead of the resource's
+		// own. Populated when the client reports a relayed avatar url
+		// unfetchable and we re-host it just for them (see
+		// receiveResourceLostMessage); empty for everyone else.
+		this.avatarUrlOverrides=new Map();
 		this.next_ack_id=BigInt(1);
 		this.clientStartMs=Date.now();
 		this.webRtcConnectedAtMs=0;
@@ -158,6 +163,9 @@ class Client {
             case message.MessagePayloadType.ReceivedResources:
                 this.receiveReceivedResourcesMessage(pkt.data);
                 return;
+			case message.MessagePayloadType.ResourceLost:
+				this.receiveResourceLostMessage(pkt.data);
+				return;
 			case message.MessagePayloadType.Acknowledgement:
 				this.ReceiveAcknowledgement(pkt.data);
 				return;
@@ -178,6 +186,66 @@ class Client {
             return false;
         }
 		return true;
+	}
+	//! The client could not obtain one or more resources it was told about.
+	//! For an ordinary resource there is nothing to do but note it — the
+	//! streaming pass will retry. For a *relayed* avatar it means this
+	//! client cannot reach the owner's avatar host (offline, 4xx, or no
+	//! CORS header in a browser), so we re-host the validated bytes and
+	//! send this one client our own copy. The avatar's owner is not told,
+	//! and other clients keep using the relayed url
+	//! (plans/avatars_plan.md §5.1).
+	receiveResourceLostMessage(bf)
+	{
+		if(!this.checkTooSmall(message.ResourceLostMessage,bf)) {
+			return;
+		}
+		var msg				=new message.ResourceLostMessage();
+		var uia				=new Uint8Array(bf);
+		var dataView		=new DataView(bf,0,bf.length);
+		core.decodeFromDataView(msg,dataView,0);
+		const excess		=uia.length-message.ResourceLostMessage.sizeof();
+		const numLost		=excess/core.UID_SIZE;
+		if(numLost<msg.uint16_resourceCount) {
+			console.log("ResourceLostMessage claims to have "+msg.uint16_resourceCount+" resources but has only enough data for "+numLost);
+			return;
+		}
+		var offset			=message.ResourceLostMessage.sizeof();
+		for(let i=0;i<msg.uint16_resourceCount;i++ ) {
+			const uid=dataView.getBigUint64(offset,core.endian);
+			offset+=core.UID_SIZE;
+			console.log("Client "+this.clientID+" reports resource "+uid+" lost.");
+			this.RehostRelayedAvatarFor(uid);
+		}
+	}
+	//! If `uid` is the mesh pointer of some client's relayed avatar, publish
+	//! a server-hosted copy and queue it to be re-sent to this client alone.
+	//! Does nothing for any other resource.
+	async RehostRelayedAvatarFor(uid)
+	{
+		const importer=this.avatarService?this.avatarService.importer:null;
+		if(!importer||typeof importer.relayedClientForMeshResourceUid!=='function')
+			return;
+		if(this.avatarUrlOverrides.has(uid))
+			return;	// Already re-hosted for this client; nothing more to try.
+		const ownerID=importer.relayedClientForMeshResourceUid(uid);
+		if(ownerID===null)
+			return;	// Not an avatar: an ordinary resource loss.
+		let hostedUrl='';
+		try {
+			hostedUrl=await importer.hostedUrlForClient(ownerID);
+		} catch(err) {
+			console.warn("Could not re-host avatar of client "+ownerID+" for client "+this.clientID+": "+err.message);
+			return;
+		}
+		if(!hostedUrl) {
+			console.warn("Client "+this.clientID+" cannot fetch the relayed avatar of client "+ownerID+
+				", and no server-hosted copy is available.");
+			return;
+		}
+		this.avatarUrlOverrides.set(uid,hostedUrl);
+		this.geometryService.ResendResource(uid);
+		console.log("Client "+this.clientID+" downgraded to a server-hosted copy of client "+ownerID+"'s avatar.");
 	}
 	receiveReceivedResourcesMessage(bf)
 	{
@@ -210,6 +278,9 @@ class Client {
             case message.MessagePayloadType.ReceivedResources:
                 this.receiveReceivedResourcesMessage(pkt.data);
                 return;
+			case message.MessagePayloadType.ResourceLost:
+				this.receiveResourceLostMessage(pkt.data);
+				return;
 			case message.MessagePayloadType.Acknowledgement:
 				this.ReceiveAcknowledgement(pkt.data);
 				return;
@@ -677,7 +748,7 @@ class Client {
 			console.warn("No resource of uid ",uid," was found.")
 			return;
 		}
-		const urlOverride=this.CubemapUrlForClient(resource);
+		const urlOverride=(this.avatarUrlOverrides&&this.avatarUrlOverrides.get(uid))||this.CubemapUrlForClient(resource);
 		const MAX_BUFFER_SIZE=resource.encodedSize();;
 		const buffer = new ArrayBuffer(MAX_BUFFER_SIZE);
 		const resourceSize=resource_encoder.EncodeResource(resource,buffer,urlOverride);

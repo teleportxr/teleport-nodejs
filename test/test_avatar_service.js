@@ -186,6 +186,10 @@ function makeImporter(nodeUid) {
 	const calls = [];
 	return {
 		calls,
+		relayForClient: (clientID, client, offerUrl) => {
+			calls.push(['relay', clientID, offerUrl]);
+			return nodeUid;
+		},
 		importValidatedForClient: async (clientID, client, validated) => {
 			calls.push(['validated', clientID, validated.contentHash]);
 			return nodeUid;
@@ -210,6 +214,62 @@ test('handleOffer with validator+importer: accepted result carries the imported 
 	const msg = sink.sent[sink.sent.length - 1];
 	assert.strictEqual(msg.content.status, 'accepted');
 	assert.strictEqual(msg.content.node_uid, 4242);
+});
+
+// Delivery mode selection (plans/avatars_plan.md §2.1). Relay is the
+// default: peers fetch the owner's own url. Each import case below is a
+// reason that url cannot go out, and none of them is a rejection.
+
+function makeRelayService(offerExtras = {}, opts = {}) {
+	const sink     = makeSink();
+	const importer = makeImporter(4242n);
+	const svc      = new avatar_service.AvatarService(42n, sink.send, Object.assign({
+		validator: makeValidator({ ok: true, reasons: [], bytes: 100, contentHash: 'sha256:aa', format: 'glb', body: Buffer.from('x') }),
+		importer,
+	}, opts));
+	svc.sendPolicy(new avatars.AvatarPolicy({ policy_id: 30n, default_available: true }));
+	sink.sent.length = 0;
+	const offer = Object.assign({ policy_id: 30, have_avatar: true, url: 'https://x/a.glb' }, offerExtras);
+	return { sink, importer, svc, offer };
+}
+
+test('accepted avatar is relayed by default: the owner\'s own url goes to peers', async () => {
+	const { sink, importer, svc, offer } = makeRelayService();
+	await svc.handleOffer(offer);
+	const msg = sink.sent[sink.sent.length - 1];
+	assert.strictEqual(msg.content.status, 'accepted');
+	assert.strictEqual(msg.content.delivery, 'relay');
+	assert.deepStrictEqual(importer.calls, [['relay', 42n, 'https://x/a.glb']]);
+});
+
+test('owner opting out of relay forces import, and is still accepted', async () => {
+	const { sink, importer, svc, offer } = makeRelayService({ allow_relay: false });
+	await svc.handleOffer(offer);
+	const msg = sink.sent[sink.sent.length - 1];
+	assert.strictEqual(msg.content.status, 'accepted');
+	assert.strictEqual(msg.content.delivery, 'import');
+	assert.deepStrictEqual(msg.content.reasons, []);
+	assert.strictEqual(importer.calls[0][0], 'validated');
+});
+
+test('a url with no decodable extension is imported, not rejected', async () => {
+	// Clients pick a decoder by file extension, so this url could not be
+	// relayed — but the avatar itself is fine.
+	const { sink, importer, svc, offer } = makeRelayService({ url: 'https://x/avatar?id=42' });
+	await svc.handleOffer(offer);
+	const msg = sink.sent[sink.sent.length - 1];
+	assert.strictEqual(msg.content.status, 'accepted');
+	assert.strictEqual(msg.content.delivery, 'import');
+	assert.deepStrictEqual(msg.content.reasons, []);
+	assert.strictEqual(importer.calls[0][0], 'validated');
+});
+
+test('allowRelay:false disables relay server-wide', async () => {
+	const { sink, importer, svc, offer } = makeRelayService({}, { allowRelay: false });
+	await svc.handleOffer(offer);
+	const msg = sink.sent[sink.sent.length - 1];
+	assert.strictEqual(msg.content.delivery, 'import');
+	assert.strictEqual(importer.calls[0][0], 'validated');
 });
 
 test('handleOffer without avatar: default is imported and its node_uid reported', async () => {

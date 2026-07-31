@@ -50,7 +50,9 @@ class TrackedResource {
 	Timeout(clientID) {
 		this.sent.set(clientIDToIndex.get(clientID), false);
 		this.acknowledged.set(clientIDToIndex.get(clientID), false);
-		this.sent_server_time_us.clear(clientID);
+		// delete, not clear: clear() takes no argument and would drop every
+		// other client's send timestamp for this resource too.
+		this.sent_server_time_us.delete(clientID);
 	}
 }
 
@@ -457,6 +459,17 @@ class GeometryService {
 		if (res) {
 			let time_now_us = core.getTimestampUs();
 			res.Sent(this.clientID, time_now_us);
+		}
+	}
+	//! Forget that we ever sent this resource to this client, so the next
+	//! streaming pass picks it up again. Used when the client tells us it
+	//! could not obtain the resource and we have something different to
+	//! send it (see Client.RehostRelayedAvatarFor).
+	ResendResource(resource_uid) {
+		if (!GeometryService.trackedResources.has(resource_uid)) return;
+		var res = GeometryService.GetOrCreateTrackedResource(resource_uid);
+		if (res) {
+			res.Timeout(this.clientID);
 		}
 	}
 	ConfirmResource(resource_uid) {

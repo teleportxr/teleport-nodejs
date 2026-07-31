@@ -135,6 +135,30 @@ class ReceivedResourcesMessage extends Message
     }
 };
 
+//! Sent by a client that could not obtain a resource it was told about —
+//! most often a mesh or texture pointer whose URL it failed to fetch or
+//! decode. The server may then re-issue the resource by another route;
+//! for a relayed avatar it re-hosts the asset and sends that client its
+//! own copy (plans/avatars_plan.md §5.1).
+class ResourceLostMessage extends Message
+{
+    constructor(){
+        super();
+        //   type=1 byte
+        this.MessagePayloadType_messagePayloadType=MessagePayloadType.ResourceLost;
+		// timestamp 8 bytes.
+		// count 2 bytes
+        this.uint16_resourceCount=0;
+		// = 11 + 8 * num resources.
+    }
+    static sizeof(){
+        return 11;
+    }
+    size(){
+        return ResourceLostMessage.sizeof();
+    }
+};
+
 class NodePosesMessage extends Message
 {
     constructor(){
@@ -174,4 +198,4 @@ class AcknowledgementMessage extends Message
         return AcknowledgementMessage.sizeof();
     }
 };
-module.exports= {Message,MessagePayloadType,HandshakeMessage,ReceivedResourcesMessage,NodePosesMessage,AcknowledgementMessage};
+module.exports= {Message,MessagePayloadType,HandshakeMessage,ReceivedResourcesMessage,ResourceLostMessage,NodePosesMessage,AcknowledgementMessage};

@@ -1,8 +1,10 @@
 'use strict';
-// Tests for the Phase-4 DefaultAvatarImporter: validated (or default)
-// avatars become scene nodes parented under the owning client's origin,
-// re-hosted via the host-supplied publish callback, and removed with a
-// RemoveNodes unstream for every client on disconnect/revoke.
+// Tests for the DefaultAvatarImporter: accepted (or default) avatars
+// become scene nodes parented under the owning client's origin, and are
+// removed with a RemoveNodes unstream for every client on
+// disconnect/revoke. The node's mesh is a pointer to either the owner's
+// own url (relay, the default) or to a server-hosted copy published
+// through the host-supplied callback (import).
 
 const test		= require('node:test');
 const assert	= require('node:assert');
@@ -101,6 +103,56 @@ test('importDefaultForClient uses defaultUrl, or returns 0n when unconfigured', 
 	assert.strictEqual(scene.GetNode(uid).components[0].meshUrl, '/generic_avatar.vrm');
 	const without = new DefaultAvatarImporter({ scene: fakeScene() });
 	assert.strictEqual(without.importDefaultForClient(5n, client), 0n);
+});
+
+test('relayForClient points the node at the owner\'s own url, publishing nothing', () => {
+	const scene = fakeScene();
+	const client = fakeClient(1n);
+	let published = false;
+	const imp = new DefaultAvatarImporter({ scene, publish: async () => { published = true; return '/x.glb'; } });
+	const uid = imp.relayForClient(8n, client, 'https://avatars.example/u/42.glb', { body: Buffer.from('b'), contentHash: 'sha256:aa' });
+	assert.strictEqual(scene.GetNode(uid).components[0].meshUrl, 'https://avatars.example/u/42.glb');
+	assert.strictEqual(published, false, 'relay must not re-host the asset');
+});
+
+test('relayForClient refuses an empty url', () => {
+	const imp = new DefaultAvatarImporter({ scene: fakeScene() });
+	assert.throws(() => imp.relayForClient(8n, null, ''), (e) => e.code === 'relay_failed');
+});
+
+test('hostedUrlForClient re-hosts a relayed avatar once, and caches the result', async () => {
+	const scene = fakeScene();
+	let publishes = 0;
+	const imp = new DefaultAvatarImporter({
+		scene,
+		publish: async () => { publishes++; return '/avatars/rehosted.glb'; },
+	});
+	imp.relayForClient(9n, fakeClient(1n), 'https://avatars.example/u/9.glb',
+		{ body: Buffer.from('b'), contentHash: 'sha256:bb', format: 'glb' });
+	assert.strictEqual(await imp.hostedUrlForClient(9n), '/avatars/rehosted.glb');
+	assert.strictEqual(await imp.hostedUrlForClient(9n), '/avatars/rehosted.glb');
+	assert.strictEqual(publishes, 1, 'a second peer failing must reuse the published copy');
+});
+
+test('hostedUrlForClient returns nothing for an avatar that was never relayed', async () => {
+	const scene = fakeScene();
+	const imp = new DefaultAvatarImporter({ scene, publish: async () => '/x.glb' });
+	imp.importUrlForClient(10n, fakeClient(1n), '/avatars/already-ours.glb');
+	assert.strictEqual(await imp.hostedUrlForClient(10n), '');
+	assert.strictEqual(await imp.hostedUrlForClient(999n), '');
+});
+
+test('relayedClientForMeshResourceUid finds the owner of a relayed pointer only', () => {
+	const scene = fakeScene();
+	const imp = new DefaultAvatarImporter({ scene, publish: async () => '/x.glb' });
+	imp.relayForClient(11n, fakeClient(1n), 'https://avatars.example/u/11.glb', { body: Buffer.from('b'), contentHash: 'sha256:cc' });
+	imp.importUrlForClient(12n, fakeClient(1n), '/avatars/ours.glb');
+	const relayedUid = imp.meshResourceUidForClient(11n);
+	const importedUid = imp.meshResourceUidForClient(12n);
+	assert.strictEqual(imp.relayedClientForMeshResourceUid(relayedUid), 11n);
+	// An imported avatar is served by us already: nothing to downgrade.
+	assert.strictEqual(imp.relayedClientForMeshResourceUid(importedUid), null);
+	assert.strictEqual(imp.relayedClientForMeshResourceUid(999999n), null);
 });
 
 test('removeForClient removes the node and unstreams it for every client', () => {
