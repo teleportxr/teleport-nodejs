@@ -33,6 +33,7 @@
     "./signaling": "./signaling.js",
     "./client/client": "./client/client.js",
     "./client/client_manager": "./client/client_manager.js",
+    "./client/client_nodes": "./client/client_nodes.js",
     "./client/avatar_service": "./client/avatar_service.js",
     "./client/avatar_validator": "./client/avatar_validator.js",
     "./client/avatar_importer": "./client/avatar_importer.js",

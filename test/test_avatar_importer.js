@@ -1,15 +1,17 @@
 'use strict';
 // Tests for the DefaultAvatarImporter: accepted (or default) avatars
-// become scene nodes parented under the owning client's origin, and are
-// removed with a RemoveNodes unstream for every client on
-// disconnect/revoke. The node's mesh is a pointer to either the owner's
-// own url (relay, the default) or to a server-hosted copy published
-// through the host-supplied callback (import).
+// become scene nodes parented under the owning client's origin, owned by
+// that client in the node registry, and removed from the scene on
+// disconnect/revoke — which is what makes every client drop them. The
+// node's mesh is a pointer to either the owner's own url (relay, the
+// default) or to a server-hosted copy published through the host-supplied
+// callback (import).
 
 const test		= require('node:test');
 const assert	= require('node:assert');
 
 const { DefaultAvatarImporter } = require('../client/avatar_importer.js');
+const { ClientNodeRegistry } = require('../client/client_nodes.js');
 const nd = require('../scene/node.js');
 
 function fakeScene() {
@@ -155,19 +157,39 @@ test('relayedClientForMeshResourceUid finds the owner of a relayed pointer only'
 	assert.strictEqual(imp.relayedClientForMeshResourceUid(999999n), null);
 });
 
-test('removeForClient removes the node and unstreams it for every client', () => {
+test('removeForClient takes the node out of the scene and out of the registry', () => {
 	const scene = fakeScene();
 	const owner = fakeClient(1n);
 	const peer = fakeClient(2n);
-	const clientManager = { clients: new Map([[6n, owner], [7n, peer]]) };
+	const registry = new ClientNodeRegistry(scene);
+	const clientManager = { clients: new Map([[6n, owner], [7n, peer]]), clientNodes: registry };
 	const imp = new DefaultAvatarImporter({ scene, clientManager });
 	const uid = imp.importUrlForClient(6n, owner, '/avatars/gone.glb');
+	assert.strictEqual(registry.ownerOf(uid), 6n);
 	imp.removeForClient(6n);
+	// Removal from the scene is the whole mechanism: each client's next
+	// UpdateVisibleNodes pass finds the node gone from its visible set and
+	// queues its own RemoveNodes payload. The importer must NOT reach into
+	// other clients' geometry services to do it by hand.
 	assert.strictEqual(scene.GetNode(uid), null);
-	assert.deepStrictEqual(owner.unstreamed, [uid]);
-	assert.deepStrictEqual(peer.unstreamed, [uid]);
+	assert.strictEqual(registry.ownerOf(uid), 0);
+	assert.deepStrictEqual(owner.unstreamed, []);
+	assert.deepStrictEqual(peer.unstreamed, []);
 	assert.strictEqual(imp.nodeUidForClient(6n), 0n);
 	// A second removal is a no-op.
 	imp.removeForClient(6n);
-	assert.deepStrictEqual(owner.unstreamed, [uid]);
+	assert.strictEqual(scene.GetNode(uid), null);
+});
+
+test('sendOwnAvatar=false hides a client its own avatar but shows it to peers', () => {
+	const scene = fakeScene();
+	const owner = fakeClient(1n);
+	const registry = new ClientNodeRegistry(scene);
+	const imp = new DefaultAvatarImporter({
+		scene, clientManager: { clientNodes: registry }, sendOwnAvatar: false });
+	const uid = imp.importUrlForClient(8n, owner, '/avatars/self.glb');
+	assert.strictEqual(registry.isVisibleTo(uid, 8n), false);
+	assert.strictEqual(registry.isVisibleTo(uid, 9n), true);
+	// And it is not pushed to the owner up-front either.
+	assert.deepStrictEqual(owner.streamed, []);
 });

@@ -92,6 +92,50 @@ var identityResolver = new identity_verifier.IdentityResolver(userStore);
 // their connection.
 var identityChallengeTimeoutMs = 5000;
 
+// WebSocket keepalive. A client that vanishes without closing its socket — a
+// crash, a laptop lid, a NAT dropping the flow — leaves a socket that looks open
+// indefinitely, and with it every node created for that client. Pinging tells us
+// within HEARTBEAT_MS * HEARTBEAT_MISSES that it has gone.
+//
+// The default matches the uint32_idle_connection_timeout the server already
+// advertises to clients in its SetupCommand.
+const HEARTBEAT_MS = parseInt(process.env.TELEPORT_WS_HEARTBEAT_MS || '5000', 10);
+const HEARTBEAT_MISSES = parseInt(process.env.TELEPORT_WS_HEARTBEAT_MISSES || '3', 10);
+
+function startHeartbeat(signalingClient) {
+	if (HEARTBEAT_MS <= 0 || HEARTBEAT_MISSES <= 0)
+		return;
+	signalingClient.missedPongs = 0;
+	signalingClient.ws.on("pong", () => {
+		signalingClient.missedPongs = 0;
+	});
+	signalingClient.heartbeatTimer = setInterval(() => {
+		if (signalingClient.missedPongs >= HEARTBEAT_MISSES) {
+			console.log(
+				"client " + signalingClient.clientID + " missed " +
+				signalingClient.missedPongs + " heartbeats; treating as disconnected."
+			);
+			processDisconnection(signalingClient.clientID, signalingClient);
+			// terminate(), not close(): there is no peer left to complete a
+			// closing handshake with.
+			try { signalingClient.ws.terminate(); } catch (e) {}
+			return;
+		}
+		signalingClient.missedPongs++;
+		try { signalingClient.ws.ping(); } catch (e) {}
+	}, HEARTBEAT_MS);
+	// A pending heartbeat must not hold the process open by itself.
+	if (signalingClient.heartbeatTimer.unref)
+		signalingClient.heartbeatTimer.unref();
+}
+
+function stopHeartbeat(signalingClient) {
+	if (signalingClient && signalingClient.heartbeatTimer) {
+		clearInterval(signalingClient.heartbeatTimer);
+		signalingClient.heartbeatTimer = null;
+	}
+}
+
 function startStreaming(signalingClient) {
     signalingClient.ChangeSignalingState(SignalingState.ACCEPTED);
 	// And we send the WebSockets connect-response.
@@ -112,7 +156,13 @@ function sendResponseToClient(clientID) {
 		signalingClient.ws.send(txt);
 	}
 }
+//! A client has gone: deliberately, by closing its socket, or by falling silent.
+//! Idempotent, because more than one of those can happen for the same client —
+//! a deliberate disconnect is followed by a socket close moments later.
 function processDisconnection(clientID,signalingClient){
+	if (!signalingClients.has(clientID))
+		return;
+	stopHeartbeat(signalingClient);
     signalingClient.ChangeSignalingState(SignalingState.START);
 	// Release anything waiting on a challenge this client will never answer.
 	if (signalingClient.pendingChallenge)
@@ -416,7 +466,14 @@ function OnWebSocket(ws, req) {
 			"client " + signalingClient.clientID +
 			" disconnected (code=" + code + (reasonStr ? ", reason=" + reasonStr : "") + ")"
 		);
+		// A closed socket is a disconnection, whether or not the client sent a
+		// "disconnect" signal first. Without this, a client that just goes away
+		// is never torn down and the nodes created for it stay in the scene for
+		// the lifetime of the process. processDisconnection is idempotent, so
+		// the polite case — disconnect frame, then close — is handled once.
+		processDisconnection(signalingClient.clientID, signalingClient);
 	});
+	startHeartbeat(signalingClient);
 }
 // Replace the identity plumbing. All fields optional:
 //

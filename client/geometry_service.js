@@ -7,7 +7,19 @@ const resources = require("../scene/resources.js");
 const { forEach } = require("underscore");
 
 var clientIDToIndex = new Map();
+// Indices belonging to clients that have gone, available for re-use. Without
+// this the bitsets grow by one bit per connection for the lifetime of the
+// process. GeometryService.ForgetClient clears a departing client's bits before
+// releasing its index, so a re-used index never inherits stale state.
+var freeIndices = [];
 var nextIndex = 0;
+
+function acquireClientIndex(clientID) {
+	if (clientIDToIndex.has(clientID)) return clientIDToIndex.get(clientID);
+	const index = freeIndices.length ? freeIndices.pop() : nextIndex++;
+	clientIDToIndex.set(clientID, index);
+	return index;
+}
 
 //! Each resource (node, texture, mesh etc) what MAY need to be streamed has a TrackedResource.
 //! Then, within the TrackedResource class instance, we keep track of which clients:
@@ -63,7 +75,7 @@ class GeometryService {
 
 	constructor(clientID) {
 		this.clientID = clientID;
-		clientIDToIndex.set(clientID, nextIndex++);
+		acquireClientIndex(clientID);
 		this.originNodeId = 0;
 		this.priority = 0;
 		// The lowest priority for which the client has confirmed all the nodes we sent.
@@ -93,6 +105,11 @@ class GeometryService {
 		// Nodes that were streamed to this client and have since been unstreamed.
 		// Drained by GetRemoveNodesToSend() and sent as a RemoveNodes payload.
 		this.removedNodesToSend = new Set();
+		// Nodes the host application has explicitly unstreamed for this client
+		// (e.g. distance culling). UpdateVisibleNodes leaves these alone, so an
+		// application decision is not undone by the next streaming pass.
+		// StreamNode() is the inverse: it clears the suppression.
+		this.appSuppressed = new Set();
 
 		this.backgroundTextureUid = 0;
 		// ten seconds for timeout. Tweak this.
@@ -104,7 +121,7 @@ class GeometryService {
 	SetOriginNode(n_uid) {
 		if (this.originNodeId == n_uid) return;
 		this.originNodeId = n_uid;
-		-this.StreamNode(n_uid);
+		this.StreamNode(n_uid);
 	}
 	static GetOrCreateTrackedResource(uid) {
 		if (!GeometryService.trackedResources.has(uid))
@@ -112,7 +129,39 @@ class GeometryService {
 		var res = GeometryService.trackedResources.get(uid);
 		return res;
 	}
+	//! Forget everything we know about a departed client, so its bookkeeping
+	//! does not accumulate for the lifetime of the process. The client's bit is
+	//! cleared in every tracked resource BEFORE its index is released, so the
+	//! next client to be handed that index does not inherit its state.
+	static ForgetClient(clientID) {
+		var index = clientIDToIndex.get(clientID);
+		if (index === undefined) return;
+		for (const [, res] of GeometryService.trackedResources) {
+			res.clientNeeds.set(index, false);
+			res.sent.set(index, false);
+			res.acknowledged.set(index, false);
+			res.sent_server_time_us.delete(clientID);
+		}
+		clientIDToIndex.delete(clientID);
+		freeIndices.push(index);
+	}
+	//! Drop a tracked resource no client needs any more and which no longer
+	//! exists in the scene. Called from UnstreamNode, the only place where a
+	//! resource can become unwanted.
+	_pruneTrackedNode(uid) {
+		// Only prune what we can positively confirm has left the scene. Without
+		// a scene we cannot tell "deleted" from "not streamed just now", and
+		// dropping the record would lose the clientNeeds bit that makes
+		// UnstreamNode idempotent.
+		if (!this.scene || this.scene.GetNode(uid)) return;
+		var res = GeometryService.trackedResources.get(uid);
+		if (!res || !res.clientNeeds.isEmpty()) return;
+		GeometryService.trackedResources.delete(uid);
+	}
 	StreamNode(uid) {
+		// An explicit request to stream is also a withdrawal of any earlier
+		// request not to: StreamNode and UnstreamNode are inverses.
+		this.appSuppressed.delete(uid);
 		// this client should stream node uid.
 		var res = GeometryService.GetOrCreateTrackedResource(uid);
 		var index = clientIDToIndex.get(this.clientID);
@@ -124,12 +173,22 @@ class GeometryService {
 		// Add to the list of nodes this client should eventually receive:
 		this.nodesToStreamEventually.add(uid);
 	}
-	UnstreamNode(uid) {
+	//! Stop streaming a node to this client. `suppress` records that the caller
+	//! does not want it back: host applications get that by default, so their
+	//! decision survives the next UpdateVisibleNodes pass. UpdateVisibleNodes
+	//! itself passes false, because it is deriving the set rather than
+	//! overriding it.
+	UnstreamNode(uid, suppress = true) {
+		if (suppress)
+			this.appSuppressed.add(uid);
 		var index = clientIDToIndex.get(this.clientID);
 		var res = GeometryService.trackedResources.get(uid);
 		if (res) {
 			if (!res.clientNeeds.get(index)) {
-				// Already unstreamed for this client — nothing to do.
+				// Already unstreamed for this client — nothing to do. The
+				// suppression above is still recorded, so a caller that
+				// re-evaluates its decision every tick keeps the node out of
+				// the visible set without touching shared state or logging.
 				return;
 			}
 			res.clientNeeds.set(index, false);
@@ -145,6 +204,33 @@ class GeometryService {
 		this.streamedNodes.delete(uid);
 		// TODO: now reduce the counts for all the dependent resources.
 		console.log("Unstreaming node ", uid," for client ", this.clientID);
+		this._pruneTrackedNode(uid);
+	}
+	//! Bring this client's streamed set into line with what it should be able to
+	//! see: every node in the scene, minus those the registry hides from it,
+	//! minus those the host application has suppressed.
+	//!
+	//! This is a diff rather than an additive sweep, which is what makes the
+	//! client-specific node lifecycle work without any explicit distribution
+	//! step. A node another client has just created enters the set and is
+	//! streamed; a node whose owner has gone has left the scene, so it leaves
+	//! the set and a RemoveNodes payload is queued. Neither case needs code of
+	//! its own.
+	UpdateVisibleNodes(scene, registry, clientID) {
+		if (!scene) return;
+		const desired = new Set();
+		for (const uid of scene.GetAllNodeUids()) {
+			if (this.appSuppressed.has(uid)) continue;
+			if (registry && !registry.isVisibleTo(uid, clientID)) continue;
+			desired.add(uid);
+		}
+		for (const uid of desired) {
+			if (!this.nodesToStreamEventually.has(uid)) this.StreamNode(uid);
+		}
+		// Copy first: UnstreamNode mutates nodesToStreamEventually.
+		for (const uid of Array.from(this.nodesToStreamEventually)) {
+			if (!desired.has(uid)) this.UnstreamNode(uid, false);
+		}
 	}
 	//! Drain the set of nodes the client must destroy. Returns an array of uids;
 	//! the caller re-queues via UnstreamNode semantics if the send fails.
@@ -282,6 +368,14 @@ class GeometryService {
 		}
 
 		var node = this.scene.GetNode(node_uid);
+		if (!node) {
+			// The node left the scene between being added to the stream set and
+			// being resolved — a client-specific node whose owner disconnected,
+			// most likely. Undo the tentative entry and let the next
+			// UpdateVisibleNodes pass queue the removal.
+			this.streamedNodes.delete(node_uid);
+			return;
+		}
 		if(diff>0 && !already_present)
 			console.log("Adding node ", node.name," (", node_uid,") for client ", this.clientID);
 		else if(diff<0 && already_present)

@@ -24,6 +24,22 @@ const MAX_ACK_RESENDS = 5;
 // Configurable via WEBRTC_CONNECT_TIMEOUT_MS environment variable.
 const WEBRTC_CONNECT_TIMEOUT_MS = parseInt(process.env.WEBRTC_CONNECT_TIMEOUT_MS || '10000', 10);
 
+// v' = v + 2 * cross(q.xyz, cross(q.xyz, v) + q.w * v). Used to lift a client's
+// stage-space head pose into the server's global space via its origin node.
+function rotateVectorByQuaternion(q,v)
+{
+	if(!q)
+		return v;
+	const tx=2*(q.y*v.z-q.z*v.y);
+	const ty=2*(q.z*v.x-q.x*v.z);
+	const tz=2*(q.x*v.y-q.y*v.x);
+	return {
+		x: v.x+q.w*tx+(q.y*tz-q.z*ty),
+		y: v.y+q.w*ty+(q.z*tx-q.x*tz),
+		z: v.z+q.w*tz+(q.x*ty-q.y*tx),
+	};
+}
+
 class OriginState
 {
     constructor() {
@@ -59,7 +75,13 @@ class Client {
 		// is what survives a reconnect. Null until identity is resolved, and
 		// stays null for anonymous clients. See identity/verifier.js.
 		this.user=null;
+		// This client's origin node: the origin of its local tracking space,
+		// within the server's global space. Assigned by setOrigin().
         this.origin_uid=0;
+		// Set by ClientManager when it creates the client. Gives access to the
+		// client-node registry during streaming; null in unit tests and for
+		// clients constructed outside the manager.
+		this.clientManager=null;
         this.handshakeMessage=new message.HandshakeMessage();
 		// The client's axes standard, learned from its Handshake. Used to pick the matching
 		// cubemap variant to stream (e.g. GlStyle -> *_ogl.ktx2). NotInitialized until handshake.
@@ -485,10 +507,34 @@ class Client {
 		if (headPose)
 			this.currentHeadPose = headPose;
 	}
-	// This client's current world position {x,y,z}, or null if not yet known.
+	// This client's head position {x,y,z}, or null if not yet known.
+	//
+	// NOTE: this is in the client's own STAGE space, not the server's global
+	// space — the client reports its head relative to its local tracking origin
+	// (see OpenXR headPose_stageSpace on the C++ client). To compare it with
+	// anything else in the scene, compose it with the global transform of the
+	// client's origin node; GetGlobalHeadPosition() does that.
 	GetHeadPosition()
 	{
 		return (this.currentHeadPose && this.currentHeadPose.position) ? this.currentHeadPose.position : null;
+	}
+	// This client's head position in the server's global space: its stage-space
+	// head pose composed with its origin node's pose. Returns null if the head
+	// pose is not yet known. Falls back to the raw stage-space position if the
+	// origin node cannot be resolved, which is correct when the origin is at the
+	// world origin and the best available answer otherwise.
+	GetGlobalHeadPosition()
+	{
+		const local=this.GetHeadPosition();
+		if(!local)
+			return null;
+		const origin=(this.scene&&this.origin_uid)?this.scene.GetNode(this.origin_uid):null;
+		if(!origin||!origin.pose)
+			return local;
+		const p=origin.pose.position;
+		// Rotate the stage-space offset into global space, then translate.
+		const r=rotateVectorByQuaternion(origin.pose.orientation,local);
+		return {x:p.x+r.x, y:p.y+r.y, z:p.z+r.z};
 	}
 	UpdateStreaming()
 	{
@@ -500,11 +546,12 @@ class Client {
 		var timestamp=core.getTimestampUs();
 		// Establish which nodes the client should have, and their resources.
 		// Then: which resources we think it does not yet have. Send those.
-		var node_uids=this.scene.GetAllNodeUids();
-		for (let uid of node_uids)
-		{
-			this.geometryService.StreamNode(uid);
-		}
+		// Which nodes should this client be able to see? Client-specific nodes
+		// (another client's avatar, its origin) are included or excluded by the
+		// node registry; the diff then streams what has appeared and queues
+		// RemoveNodes for what has gone. See client_nodes.js.
+		const registry=this.clientManager?this.clientManager.clientNodes:null;
+		this.geometryService.UpdateVisibleNodes(this.scene,registry,this.clientID);
 		var nodes_to_stream_now_uids=this.geometryService.GetNodesToSend();
 		for (const uid of nodes_to_stream_now_uids)
 		{
@@ -845,7 +892,19 @@ class Client {
 	SetScene(sc){
 		this.scene=sc;
 		this.geometryService.SetScene(sc);
+		// The node registry needs the scene to be able to destroy client-specific
+		// nodes. Picking it up here means host applications carry on calling only
+		// SetScene, as they always have.
+		if(this.clientManager)
+			this.clientManager.SetScene(sc);
 	}
+	//! Set this client's origin node: the origin of its LOCAL tracking space,
+	//! positioned as a node within the server's global simulation space. It is
+	//! not the client's avatar and not its head — the client composes its own
+	//! locally-tracked head and controller poses on top of this node's global
+	//! transform. Origins are typically stationary, changing only intermittently
+	//! (a teleport, a vehicle, a change of room), which is why this is an acked,
+	//! counter-versioned command rather than a per-frame update.
 	setOrigin(origin_node_uid)
 	{
 		if(origin_node_uid==0)
@@ -855,6 +914,9 @@ class Client {
 		// It's a different origin. So we reset the time sent.
 		this.currentOriginState.serverTimeSentUs=BigInt(0);
 		this.currentOriginState.originClientHas=origin_node_uid;
+		// Kept in step so anything parenting under the client (its avatar, say)
+		// can find the origin without reaching into currentOriginState.
+		this.origin_uid=origin_node_uid;
 	}
 }
 

@@ -23,6 +23,7 @@
 const nd = require('../scene/node.js');
 const core = require('../core/core.js');
 const resources = require('../scene/resources.js');
+const client_nodes = require('./client_nodes.js');
 const { redactUrl } = require('../utils/redact.js');
 
 class IAvatarImporter
@@ -67,6 +68,9 @@ class DefaultAvatarImporter extends IAvatarImporter
 	//!   defaultUrl     — server-relative URL of the default avatar
 	//!                    (e.g. '/generic_avatar.vrm'), already served by
 	//!                    the host. Optional.
+	//!   sendOwnAvatar  — whether a client is sent its own avatar node as well
+	//!                    as its peers'. Default true. Set false so a client
+	//!                    does not find itself standing inside its own body.
 	constructor(opts = {})
 	{
 		super();
@@ -76,6 +80,7 @@ class DefaultAvatarImporter extends IAvatarImporter
 		this.clientManager	= opts.clientManager || null;
 		this.publish		= opts.publish || null;
 		this.defaultUrl		= opts.defaultUrl || '';
+		this.sendOwnAvatar	= opts.sendOwnAvatar !== false;
 		// clientID → { nodeUid, url, relayed, validated, hostedUrl }.
 		// `validated` is kept for relayed avatars only, so the asset can
 		// be re-hosted on demand if a peer fails to fetch the owner's
@@ -110,9 +115,21 @@ class DefaultAvatarImporter extends IAvatarImporter
 			validated:	meta.validated || null,
 			hostedUrl:	'',
 		});
-		// Kick off streaming to the owner immediately; everyone else
-		// picks the node up on their next UpdateStreaming tick.
-		if (client && client.geometryService)
+		// Record the ownership, so the node is destroyed with the client's
+		// session and so every client's streaming pass knows who may see it.
+		// Peers pick it up on their next tick; nothing has to push it to them.
+		const registry = this._registry();
+		if (registry)
+		{
+			registry.register(clientID, uid, {
+				role:		'avatar',
+				visibility:	this.sendOwnAvatar ? client_nodes.NodeVisibility.Everyone
+												: client_nodes.NodeVisibility.PeersOnly,
+			});
+		}
+		// Kick off streaming to the owner immediately rather than waiting up to
+		// a tick — unless the owner is not meant to see its own avatar.
+		if (this.sendOwnAvatar && client && client.geometryService)
 			client.geometryService.StreamNode(uid);
 		console.log('avatar node ' + uid + ' (' + redactUrl(url) + ') ' +
 			(meta.relayed ? 'relayed' : 'imported') + ' for client ' + clientID);
@@ -210,24 +227,28 @@ class DefaultAvatarImporter extends IAvatarImporter
 		return null;
 	}
 
-	//! Remove the avatar node of a client: delete it from the scene and
-	//! unstream it for every connected client, which queues a RemoveNodes
-	//! payload on their next streaming tick.
+	//! The client-node registry, when this importer is attached to a client
+	//! manager that has one. Null in unit tests and for hosts that drive the
+	//! importer directly, in which case ownership is simply not recorded.
+	_registry()
+	{
+		return (this.clientManager && this.clientManager.clientNodes) ? this.clientManager.clientNodes : null;
+	}
+
+	//! Remove the avatar node of a client: delete it from the scene and forget
+	//! it. Removal from the scene is the whole story — every client's next
+	//! streaming pass finds the node gone from its visible set and queues a
+	//! RemoveNodes payload of its own accord.
 	removeForClient(clientID)
 	{
 		const entry = this.nodeByClient.get(clientID);
 		if (!entry)
 			return;
 		this.nodeByClient.delete(clientID);
+		const registry = this._registry();
+		if (registry)
+			registry.unregister(entry.nodeUid);
 		this.scene.RemoveNode(entry.nodeUid);
-		if (this.clientManager && this.clientManager.clients)
-		{
-			for (const [, cl] of this.clientManager.clients)
-			{
-				if (cl && cl.geometryService)
-					cl.geometryService.UnstreamNode(entry.nodeUid);
-			}
-		}
 		console.log('avatar node ' + entry.nodeUid + ' removed for client ' + clientID);
 	}
 }
