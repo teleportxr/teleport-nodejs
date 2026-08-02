@@ -4,6 +4,7 @@
     "@roamhq/wrtc": "^0.10.0",
     "bitset": "^5.2.3",
     "get-current-line": "^7.4.0",
+    "jose": "^5.10.0",
     "microtime": "^3.1.1",
     "msdf-bmfont-xml": "^2.7.0",
     "underscore": "^1.13.7",
@@ -39,6 +40,10 @@
     "./utils/redact": "./utils/redact.js",
     "./connections/webrtcconnectionmanager": "./connections/webrtcconnectionmanager.js",
     "./protocol/avatars": "./protocol/avatars.js",
+    "./protocol/identity": "./protocol/identity.js",
+    "./identity/user_store": "./identity/user_store.js",
+    "./identity/verifier": "./identity/verifier.js",
+    "./identity/oidc_verifier": "./identity/oidc_verifier.js",
     "./scene/scene": "./scene/scene.js",
     "./scene/node": "./scene/node.js",
     "./scene/resources": "./scene/resources.js"

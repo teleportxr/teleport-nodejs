@@ -54,6 +54,11 @@ class Client {
     constructor(cid,sigSend) {
 		this.signalingSend=sigSend;
         this.clientID=cid;
+		// The resolved user behind this session: { tier, key, record, isNewUser }.
+		// clientID identifies the *connection*; this identifies the person, and
+		// is what survives a reconnect. Null until identity is resolved, and
+		// stays null for anonymous clients. See identity/verifier.js.
+		this.user=null;
         this.origin_uid=0;
         this.handshakeMessage=new message.HandshakeMessage();
 		// The client's axes standard, learned from its Handshake. Used to pick the matching

@@ -19,14 +19,32 @@ test('decodeCapabilities returns an empty bag for any input', () => {
 	assert.deepStrictEqual(avatars.decodeCapabilities('nope'),    {});
 });
 
-test('decodeCapabilities ignores unknown keys rather than failing on them', () => {
-	const caps = avatars.decodeCapabilities({ future_flag: 'whatever', avatar_relay: true });
-	assert.deepStrictEqual(caps, {});
+test('decodeCapabilities carries unknown boolean flags through', () => {
+	// The set has to be able to grow without a version bump, so a name this
+	// build has never heard of is still preserved for whoever does know it.
+	const caps = avatars.decodeCapabilities({ future_flag: true, avatar_relay: false });
+	assert.deepStrictEqual(caps, { future_flag: true, avatar_relay: false });
 });
 
-test('encodeCapabilities emits an empty bag', () => {
-	assert.deepStrictEqual(avatars.encodeCapabilities({ junk: 'x' }), {});
-	assert.deepStrictEqual(avatars.encodeCapabilities({}),            {});
+test('decodeCapabilities drops non-boolean values rather than coercing them', () => {
+	// A capability gates whether a new signal type may be sent at all, so
+	// "truthy" is not good enough: only an explicit boolean counts.
+	const caps = avatars.decodeCapabilities({ a: 'true', b: 1, c: {}, d: null, e: true });
+	assert.deepStrictEqual(caps, { e: true });
+});
+
+test('encodeCapabilities round-trips a decoded bag', () => {
+	assert.deepStrictEqual(avatars.encodeCapabilities({ junk: 'x' }),  {});
+	assert.deepStrictEqual(avatars.encodeCapabilities({}),             {});
+	assert.deepStrictEqual(avatars.encodeCapabilities({ f: true }),    { f: true });
+});
+
+test('hasCapability is true only for an explicitly advertised flag', () => {
+	const caps = avatars.decodeCapabilities({ identity_challenge: true, other: false });
+	assert.strictEqual(avatars.hasCapability(caps, avatars.CAPABILITY_IDENTITY_CHALLENGE), true);
+	assert.strictEqual(avatars.hasCapability(caps, 'other'),   false);
+	assert.strictEqual(avatars.hasCapability(caps, 'missing'), false);
+	assert.strictEqual(avatars.hasCapability(null,  'anything'), false);
 });
 
 test('isRelayableUrl accepts the extensions clients can decode', () => {

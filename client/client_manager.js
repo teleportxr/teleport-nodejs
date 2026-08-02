@@ -2,6 +2,7 @@
 const core=require("../core/core.js");
 const client=require("./client.js");
 const signaling=require("../signaling.js");
+const identity_proto=require("../protocol/identity.js");
 var _ = require('underscore');
 const WebRtcConnectionManager = require('../connections/webrtcconnectionmanager');
 
@@ -69,11 +70,14 @@ class ClientManager
 			var sigSend=sigCli.sendToClient.bind(sigCli);
 			var c=this.createClient(clientID,sigSend);
 			c.setOrigin(origin_uid);
+			// Identity was resolved before the session started, so the host
+			// application can act on it in onClientPostCreate.
+			c.user=sigCli.user||null;
 			if(this.clients.size==0)
 				this.StartStreaming();
             this.clients.set(clientID,c);
 			if(this.onClientPostCreate!=null)
-				this.onClientPostCreate(clientID);
+				this.onClientPostCreate(clientID, c.user);
 			return c;
         }
         var c=this.clients.get(clientID);
@@ -137,10 +141,21 @@ class ClientManager
 		this.RemoveClient(clientID);
 	}
 	writeState() {
-		var content="<table><tr><th>Client Id</th><th>IP Address</th><th>Signalling State</th></tr>";
+		// This builds HTML by concatenation, and displayName is supplied by the
+		// client, so every cell goes through escapeHtml. Do not interpolate a
+		// raw value here.
+		const esc=identity_proto.escapeHtml;
+		var content="<table><tr><th>Client Id</th><th>IP Address</th><th>Signalling State</th>"
+			+"<th>User</th><th>Trust</th><th>Visits</th></tr>";
 		for (let [cl_id,cl] of this.clients) {
 			var sigCli=signaling.signalingClients.get(cl_id);
-			content+="\n<tr><td>"+cl_id+"</td> <td>" + sigCli.ip + "</td> <td>" + sigCli.signalingState + "</td></tr>";
+			var user=cl.user;
+			var tier=user?user.tier:identity_proto.TRUST_ANONYMOUS;
+			var name=(user&&user.record&&user.record.displayName)?user.record.displayName:"—";
+			var visits=(user&&user.record)?user.record.visits:"—";
+			content+="\n<tr><td>"+esc(cl_id)+"</td> <td>" + esc(sigCli?sigCli.ip:"") + "</td> <td>"
+				+ esc(sigCli?sigCli.signalingState:"") + "</td> <td>" + esc(name) + "</td> <td>"
+				+ esc(tier) + "</td> <td>" + esc(visits) + "</td></tr>";
 		};
 		content+="\n</table>";
 		return content;

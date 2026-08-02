@@ -2,6 +2,9 @@
 const WebRtcConnectionManager	= require('./connections/webrtcconnectionmanager.js');
 const signaling					= require("./signaling.js");
 const client_manager 			= require('./client/client_manager.js');
+const identity_proto			= require('./protocol/identity.js');
+const user_store				= require('./identity/user_store.js');
+const identity_verifier			= require('./identity/verifier.js');
 
 /** Generates BigInts between low (inclusive) and high (exclusive) */
 function generateRandomBigInt() {
@@ -31,7 +34,21 @@ function initServer(signaling_port, options) {
 		webRtcConnectionManager.SetIceTransportPolicy(options.iceTransportPolicy);
 	if (options && typeof options.audioEchoTest !== 'undefined')
 		webRtcConnectionManager.SetAudioEchoTest(options.audioEchoTest);
+	// Identity: how connecting clients are recognised as new or returning.
+	// Left alone this remembers users in-process and verifies nothing; see
+	// signaling.configureIdentity.
+	if (options && options.identity)
+		signaling.configureIdentity(options.identity);
 	return signaling.init(serverID, webRtcConnectionManager,cm.newClient.bind(cm),cm.disconnectClient.bind(cm),signaling_port);
   }
-  
-  module.exports = {initServer}
+
+  module.exports = {
+	initServer,
+	// Identity: parse and canonicalise `connect.identity`, decide trust, and
+	// remember users between sessions.
+	UserStore:         user_store.UserStore,
+	MemoryUserStore:   user_store.MemoryUserStore,
+	IdentityVerifier:  identity_verifier.IdentityVerifier,
+	IdentityResolver:  identity_verifier.IdentityResolver,
+	identity:          identity_proto,
+  }

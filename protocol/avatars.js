@@ -20,18 +20,41 @@ const TELEPORT_SIGNAL_TYPE_AVATAR_REVOKE        = 'avatar-revoke';
 
 // SignalingCapabilities ------------------------------------------------
 // Free-form capability bag advertised on the `connect` envelope. It is a
-// general signaling-level extension point; no keys are defined at
-// present. Unknown keys are ignored on read and dropped on write, so the
-// set can grow without breaking older peers.
+// general signaling-level extension point: a capability is a named boolean
+// flag, and the set grows without a version bump because unknown names are
+// carried through rather than rejected.
+//
+// This matters for more than tidiness. A peer that does not recognise a
+// signal type forwards it to the WebRTC stack (see signaling.js's
+// dispatcher and TeleportClient/SignalingServer.cpp), so a server must
+// never send a new signal type to a client that has not advertised support
+// for it — the frame would be pushed into libdatachannel as if it were SDP.
+// Every capability below is such a gate.
 
+// Client can answer an `identity-challenge` with a signed `identity-response`.
+const CAPABILITY_IDENTITY_CHALLENGE = 'identity_challenge';
+
+// Only boolean-valued keys are capabilities. Anything else is malformed and
+// is dropped rather than being coerced, so a truthy-but-not-true value
+// (`"false"`, `0`, `{}`) can never be mistaken for support.
 function decodeCapabilities(raw) {
-	void raw;
-	return {};
+	const caps = {};
+	if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+		return caps;
+	for (const [name, value] of Object.entries(raw)) {
+		if (typeof value === 'boolean' && name.length)
+			caps[name] = value;
+	}
+	return caps;
 }
 
 function encodeCapabilities(caps) {
-	void caps;
-	return {};
+	return decodeCapabilities(caps);
+}
+
+// True only when the peer explicitly advertised the capability.
+function hasCapability(caps, name) {
+	return !!caps && caps[name] === true;
 }
 
 // AvatarPolicy ---------------------------------------------------------
@@ -153,7 +176,8 @@ module.exports = {
 	TELEPORT_SIGNAL_TYPE_AVATAR_OFFER,
 	TELEPORT_SIGNAL_TYPE_AVATAR_RESULT,
 	TELEPORT_SIGNAL_TYPE_AVATAR_REVOKE,
-	decodeCapabilities, encodeCapabilities,
+	decodeCapabilities, encodeCapabilities, hasCapability,
+	CAPABILITY_IDENTITY_CHALLENGE,
 	AvatarPolicy, parseAvatarPolicy,
 	parseAvatarOffer, encodeAvatarOffer,
 	encodeAvatarResult, encodeAvatarRevoke,

@@ -95,6 +95,27 @@ class AvatarService {
 			return;
 		}
 
+		// A returning user re-offering the avatar we already validated does not
+		// need it fetched, hashed and measured again.
+		//
+		// The match is on content hash, which the server computed from the
+		// bytes itself last time. The client must still supply the url and the
+		// hash on every offer — nothing is ever read back to it — so this saves
+		// a download without disclosing anything the caller did not know.
+		//
+		// Only on the relay path: importing re-hosts the bytes, and a
+		// remembered result has no bytes precisely because we skipped the
+		// fetch. When the avatar has to be imported, validate properly.
+		const remembered = this._rememberedAvatar();
+		if (remembered && offer.content_hash && offer.content_hash === remembered.contentHash &&
+			this._chooseDelivery(offer) === 'relay')
+		{
+			console.log('avatar for client ' + this.clientID +
+				': reusing validation from a previous session (hash ' + remembered.contentHash.slice(0, 12) + '…)');
+			await this._acceptValidated(offer, remembered.validated, 'relay');
+			return;
+		}
+
 		// Long-running validation gets a 'pending' status so the client
 		// can show progress instead of appearing to hang (plan §4.1).
 		let pendingSent = false;
@@ -119,35 +140,71 @@ class AvatarService {
 		clearTimeout(pendingTimer);
 
 		if (result.ok) {
-			// The avatar becomes a scene node whose mesh is a pointer to
-			// a url the peers fetch themselves. Relay (the owner's own
-			// url) unless something rules it out, in which case re-host
-			// and point at our copy instead.
-			const delivery = this._chooseDelivery(offer);
-			let nodeUid = 0n;
-			if (this.importer) {
-				try {
-					nodeUid = delivery === 'relay'
-						? this.importer.relayForClient(this.clientID, this.client, offer.url, result)
-						: await this.importer.importValidatedForClient(this.clientID, this.client, result);
-				} catch (err) {
-					this._replyDefaultOrReject(offer.policy_id, [err.code || 'import_failed']);
-					void pendingSent;
-					return;
-				}
-			}
-			this._reply({
-				policy_id:		offer.policy_id,
-				status:			'accepted',
-				node_uid:		nodeUid,
-				using_default:	false,
-				delivery:		delivery,
-				reasons:		[],
-			});
+			await this._acceptValidated(offer, result, null);
 		} else {
 			this._replyDefaultOrReject(offer.policy_id, result.reasons || ['validation_failed']);
 		}
 		void pendingSent;
+	}
+
+	// Turn a successful validation into a scene node and an avatar-result.
+	// `delivery` forces the delivery mode when the caller has already decided
+	// it; pass null to choose here. `validated` is remembered against the user
+	// so a later session can skip revalidation.
+	async _acceptValidated(offer, validated, delivery) {
+		// The avatar becomes a scene node whose mesh is a pointer to a url the
+		// peers fetch themselves. Relay (the owner's own url) unless something
+		// rules it out, in which case re-host and point at our copy instead.
+		const mode = delivery || this._chooseDelivery(offer);
+		let nodeUid = 0n;
+		if (this.importer) {
+			try {
+				nodeUid = mode === 'relay'
+					? this.importer.relayForClient(this.clientID, this.client, offer.url, validated)
+					: await this.importer.importValidatedForClient(this.clientID, this.client, validated);
+			} catch (err) {
+				this._replyDefaultOrReject(offer.policy_id, [err.code || 'import_failed']);
+				return;
+			}
+		}
+		this._rememberAvatar(validated);
+		this._reply({
+			policy_id:		offer.policy_id,
+			status:			'accepted',
+			node_uid:		nodeUid,
+			using_default:	false,
+			delivery:		mode,
+			reasons:		[],
+		});
+	}
+
+	// The avatar this user was last seen with, or null. Anonymous clients have
+	// no record, so they always revalidate.
+	_rememberedAvatar() {
+		const user = this.client && this.client.user;
+		if (!user || !user.record || !user.record.avatar)
+			return null;
+		const avatar = user.record.avatar;
+		return (avatar.contentHash && avatar.validated) ? avatar : null;
+	}
+
+	// Remember a validated avatar against the user, not the clientID: the
+	// point is to still have it after this connection is gone.
+	//
+	// The response body is dropped before storing. It can be many megabytes,
+	// it is not needed to recognise the same avatar again, and keeping it
+	// would make the user store grow without bound.
+	_rememberAvatar(validated) {
+		const user = this.client && this.client.user;
+		if (!user || !user.record || !validated || !validated.contentHash)
+			return;
+		const { body, ...withoutBody } = validated;
+		void body;
+		const avatar = { contentHash: validated.contentHash, validated: withoutBody };
+		if (typeof user.update === 'function')
+			user.update({ avatar });
+		else
+			user.record.avatar = avatar;
 	}
 
 	// Relay or import? Relay is the default; each of the three checks

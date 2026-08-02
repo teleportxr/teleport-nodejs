@@ -3,8 +3,12 @@ const getcurrentline = require("get-current-line").default;
 
 // Importing the required modules
 const WebSocketServer = require("ws");
+const crypto = require("crypto");
 const core = require("./core/core.js");
 const avatars = require("./protocol/avatars.js");
+const identity_proto = require("./protocol/identity.js");
+const user_store = require("./identity/user_store.js");
+const identity_verifier = require("./identity/verifier.js");
 
 class SignalingState {
 	static START = new SignalingState("Start");
@@ -38,10 +42,22 @@ class SignalingClient {
 		this.handleAvatarOffer=null;
 		this.handleAvatarRevoke=null;
 		// Session-level capabilities advertised by the client in its
-		// `connect` message. A general extension point with no keys
-		// currently defined; unknown keys are ignored so the set can
-		// grow without breaking older clients.
+		// `connect` message. A general extension point; unknown keys are
+		// carried through so the set can grow without breaking older
+		// clients. Gates every signal type added after 0.9 — see
+		// protocol/avatars.js.
 		this.capabilities = {};
+		// Who the client says it is, as parsed from `connect`. Unverified.
+		this.identity = null;
+		// The resolved user: { tier, key, record, isNewUser }. Set once
+		// identity resolution completes, just before the session starts.
+		this.user = null;
+		// Guards the async gap between `connect` and startStreaming(): a
+		// client whose discovery loop ticks again during identity
+		// verification must not start a second session.
+		this.identityInFlight = false;
+		// The outstanding identity-challenge, if any.
+		this.pendingChallenge = null;
 	}
 	ChangeSignalingState(newState) {
 		console.log(
@@ -65,6 +81,17 @@ var newClient=null;
 var disconnectClient=null;
 var clientHostHeader = ""; // Store the first client's host header for resource URLs
 var clientProtoHeader = ""; // Store the first client's X-Forwarded-Proto header
+
+// Identity plumbing. Defaults recognise returning users within this process
+// and verify nothing; exports.init() can replace either.
+var userStore = new user_store.MemoryUserStore();
+var identityVerifierRegistry = new identity_verifier.IdentityVerifier();
+var identityResolver = new identity_verifier.IdentityResolver(userStore);
+// How long to wait for an identity-response before giving up and continuing
+// at the asserted tier. A failed or slow challenge must never cost the user
+// their connection.
+var identityChallengeTimeoutMs = 5000;
+
 function startStreaming(signalingClient) {
     signalingClient.ChangeSignalingState(SignalingState.ACCEPTED);
 	// And we send the WebSockets connect-response.
@@ -87,6 +114,9 @@ function sendResponseToClient(clientID) {
 }
 function processDisconnection(clientID,signalingClient){
     signalingClient.ChangeSignalingState(SignalingState.START);
+	// Release anything waiting on a challenge this client will never answer.
+	if (signalingClient.pendingChallenge)
+		signalingClient.pendingChallenge.resolve(null);
 	disconnectClient(signalingClient.clientID);
 	signalingClients.delete(clientID);
 }
@@ -95,6 +125,12 @@ function processInitialRequest(clientID, signalingClient, content) {
 	// capabilities empty.
 	if (content && typeof content === 'object' && content.capabilities) {
 		signalingClient.capabilities = avatars.decodeCapabilities(content.capabilities);
+	}
+	// Who the client claims to be. Nothing is trusted yet: parsing only
+	// normalises the shape, and a malformed or absent identity simply leaves
+	// the client anonymous rather than failing the connection.
+	if (content && typeof content === 'object' && content.identity !== undefined) {
+		signalingClient.identity = identity_proto.parseIdentity(content.identity);
 	}
 	var j_clientID = 0;
 	if (content.hasOwnProperty("clientID")) {
@@ -161,8 +197,114 @@ function processInitialRequest(clientID, signalingClient, content) {
 	}
 	if (signalingClient.signalingState==SignalingState.REQUESTED)
 	{
-		startStreaming(signalingClient);
+		beginSession(signalingClient);
 	}
+}
+
+// Resolve who this client is, then start the session. Identity resolution can
+// involve a round-trip to the client and a network call to an issuer, so this
+// is async — but the session start it guards is not optional: every failure
+// path below still ends in startStreaming().
+function beginSession(signalingClient) {
+	if (signalingClient.identityInFlight)
+		return;
+	signalingClient.identityInFlight = true;
+	resolveIdentityFor(signalingClient)
+		.then((verifyResult) => identityResolver.resolve(signalingClient.identity, verifyResult))
+		.catch((err) => {
+			console.log("identity: resolution failed for client " + signalingClient.clientID +
+				": " + (err && err.message ? err.message : err));
+			return { tier: identity_proto.TRUST_ANONYMOUS, key: null, record: null, isNewUser: true, identity: null };
+		})
+		.then((user) => {
+			signalingClient.identityInFlight = false;
+			// The socket may have gone during verification.
+			if (!signalingClients.has(signalingClient.clientID))
+				return;
+			signalingClient.user = user;
+			logUser(signalingClient, user);
+			startStreaming(signalingClient);
+		});
+}
+
+function logUser(signalingClient, user) {
+	if (!user || user.tier === identity_proto.TRUST_ANONYMOUS) {
+		console.log("identity: client " + signalingClient.clientID + " is anonymous.");
+		return;
+	}
+	const who = user.record && user.record.displayName ? ' "' + user.record.displayName + '"' : '';
+	console.log("identity: client " + signalingClient.clientID + " is a " +
+		(user.isNewUser ? "new" : "returning") + " " + user.tier + " user" + who +
+		" (key=" + user.key + ", visits=" + (user.record ? user.record.visits : 0) + ")");
+}
+
+// Challenge the client to prove it holds the key its credential was bound to,
+// and verify the answer. Returns the verification result, or null when no
+// challenge was issued or it did not succeed — in which case the caller falls
+// back to the asserted tier.
+//
+// The challenge is what makes a forwarded credential useless to anyone but the
+// intended server: an OIDC id_token's audience is the *client's* id, not ours,
+// so a token replayed by another server still cannot be signed for our
+// challenge. See Teleport/docs/protocol/signaling.rst.
+function resolveIdentityFor(signalingClient) {
+	if (!identityVerifierRegistry.enabled)
+		return Promise.resolve(null);
+	if (!signalingClient.identity || identity_proto.isGuestIdentity(signalingClient.identity))
+		return Promise.resolve(null);
+	// A client that has not advertised the capability must never be sent the
+	// challenge: unknown signal types are forwarded to the WebRTC stack, so the
+	// frame would land in libdatachannel as if it were SDP.
+	if (!avatars.hasCapability(signalingClient.capabilities, avatars.CAPABILITY_IDENTITY_CHALLENGE))
+		return Promise.resolve(null);
+
+	const challenge = crypto.randomBytes(32).toString('base64url');
+	return new Promise((resolve) => {
+		const timer = setTimeout(() => {
+			if (signalingClient.pendingChallenge && signalingClient.pendingChallenge.challenge === challenge) {
+				signalingClient.pendingChallenge = null;
+				console.log("identity: client " + signalingClient.clientID + " did not answer the challenge in time.");
+				resolve(null);
+			}
+		}, identityChallengeTimeoutMs);
+		signalingClient.pendingChallenge = {
+			challenge,
+			resolve: (result) => {
+				clearTimeout(timer);
+				signalingClient.pendingChallenge = null;
+				resolve(result);
+			},
+		};
+		signalingClient.sendToClient(JSON.stringify({
+			"teleport-signal-type": identity_proto.TELEPORT_SIGNAL_TYPE_IDENTITY_CHALLENGE,
+			content: { challenge, serverID: serverID.toString() },
+		}));
+	});
+}
+
+// Handle an identity-response. Anything wrong with it resolves to null, which
+// leaves the client at the asserted tier rather than disconnecting it.
+async function processIdentityResponse(signalingClient, content) {
+	const pending = signalingClient.pendingChallenge;
+	if (!pending) {
+		console.log("identity: unsolicited identity-response from client " + signalingClient.clientID + "; ignored.");
+		return;
+	}
+	if (!content || typeof content !== 'object' || content.challenge !== pending.challenge) {
+		console.log("identity: client " + signalingClient.clientID + " answered the wrong challenge.");
+		pending.resolve(null);
+		return;
+	}
+	const result = await identityVerifierRegistry.verify(content.credential, {
+		identity:  signalingClient.identity,
+		challenge: pending.challenge,
+		key:       content.key,
+		signature: content.signature,
+		serverID:  serverID.toString(),
+	});
+	if (!result.ok)
+		console.log("identity: verification failed for client " + signalingClient.clientID + ": " + result.reason);
+	pending.resolve(result.ok ? result : null);
 }
 
 function receiveWebSocketsMessage(clientID, signalingClient, txt) {
@@ -184,6 +326,10 @@ function receiveWebSocketsMessage(clientID, signalingClient, txt) {
 			signalingClient.handleAvatarOffer(message["content"]);
 		else
 			console.log("avatar-offer received for client " + clientID + " but no handler is wired.");
+	}
+	else if (teleport_signal_type == identity_proto.TELEPORT_SIGNAL_TYPE_IDENTITY_RESPONSE)
+	{
+		processIdentityResponse(signalingClient, message["content"]);
 	}
 	else if (teleport_signal_type == avatars.TELEPORT_SIGNAL_TYPE_AVATAR_REVOKE)
 	{
@@ -272,6 +418,28 @@ function OnWebSocket(ws, req) {
 		);
 	});
 }
+// Replace the identity plumbing. All fields optional:
+//
+//   store             a UserStore (see identity/user_store.js). Defaults to an
+//                     in-process Map, so users are remembered only until the
+//                     server restarts.
+//   verifier          an IdentityVerifier registry. While empty no challenge is
+//                     ever issued, and every client stays at the asserted tier.
+//   requireVerified   treat unverified clients as anonymous, remembering
+//                     nothing about them.
+//   challengeTimeoutMs
+exports.configureIdentity = function (opts = {}) {
+	if (opts.store)
+		userStore = opts.store;
+	if (opts.verifier)
+		identityVerifierRegistry = opts.verifier;
+	if (opts.challengeTimeoutMs)
+		identityChallengeTimeoutMs = opts.challengeTimeoutMs;
+	identityResolver = new identity_verifier.IdentityResolver(userStore, { requireVerified: !!opts.requireVerified });
+	return { store: userStore, verifier: identityVerifierRegistry, resolver: identityResolver };
+};
+exports.getUserStore = function () { return userStore; };
+
 exports.init = function (server_id, webRtcCM, newClientFn, disconnectClientFn, signaling_port) {
 	serverID = server_id;
 	// Creating a new websocket server
