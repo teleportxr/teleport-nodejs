@@ -37,6 +37,10 @@ class ClientManager
 		this.onClientPostCreate=null;
 		this.onClientDisconnect=null;
 		this.geometryIntervalId=0;
+		// Motion tick: see SetMotionTickMs.
+		this.motionIntervalId=0;
+		this.motionTickMs=parseInt(process.env.TELEPORT_MOTION_TICK_MS || '50', 10);
+		this.lastMotionTickUs=0;
 		let unixt_us=core.getStartTimeUnixUs();
 		console.log("Start Time: "+unixt_us+" us = "+core.unixTimeToUTCString(unixt_us)+"\n");
     }
@@ -57,15 +61,66 @@ class ClientManager
 			this.anonymousGraceMs=anonymousMs;
 	}
 
+	//! How often the motion tick runs, in ms. Node movement is per-frame state, so it
+	//! cannot ride on the 1 Hz geometry pass. Clients report head poses at ~10 Hz; 20 Hz
+	//! here keeps the follower smooth without the tick becoming the bottleneck.
+	SetMotionTickMs(ms)
+	{
+		if(ms!=null&&ms>0)
+			this.motionTickMs=ms;
+	}
 	StartStreaming(){
 		this.geometryIntervalId = setInterval(_.bind( function() {
 			//console.log("Streaming Update at "+core.getTimestampUs()/1000000.0);
 			this.UpdateStreaming();
 		  },this), 1000);
+		this.lastMotionTickUs=core.getTimestampUs();
+		this.motionIntervalId = setInterval(_.bind( function() {
+			this.UpdateMotion();
+		  },this), this.motionTickMs);
 	}
 	StopStreaming(){
 		if(this.geometryIntervalId!=0)
 			clearInterval(this.geometryIntervalId);
+		if(this.motionIntervalId!=0)
+		{
+			clearInterval(this.motionIntervalId);
+			this.motionIntervalId=0;
+		}
+	}
+	//! Queue a node movement for every connected client, not just the one whose
+	//! controller produced it. A node moved for its owner has to move for the peers
+	//! watching it too — movement updates are per-connection, like every other command.
+	//!
+	//! No visibility test is needed here: Client.SendNodeMovements skips any node the
+	//! client has not acknowledged, and a client that cannot see the node was never sent
+	//! it, so it can never have acknowledged it.
+	QueueNodeMovementForAll(uid,pose)
+	{
+		for (const [,cl] of this.clients)
+			cl.QueueNodeMovement(uid,pose);
+	}
+	//! Run every client's motion controllers and flush the movement updates they queued.
+	//! Deliberately separate from UpdateStreaming: that pass diffs and sends resources at
+	//! 1 Hz, this one moves nodes the client already has.
+	UpdateMotion() {
+		const nowUs=core.getTimestampUs();
+		// Real elapsed time, not the nominal interval: setInterval drifts under load, and
+		// a controller integrating with the wrong dt would move at the wrong speed.
+		let dtSeconds=(nowUs-this.lastMotionTickUs)/1000000.0;
+		this.lastMotionTickUs=nowUs;
+		// A long stall (debugger, GC pause, process suspend) must not teleport followers.
+		if(!(dtSeconds>0)||dtSeconds>1.0)
+			dtSeconds=this.motionTickMs/1000.0;
+		for (let [cl_id,cl] of this.clients) {
+			// As in UpdateStreaming: one client's failure must not stop the others, and an
+			// exception escaping a setInterval callback would take the process down.
+			try {
+				cl.UpdateMotion(dtSeconds,nowUs);
+			} catch(err) {
+				console.error("UpdateMotion failed for client "+cl_id+": "+(err&&err.stack?err.stack:err));
+			}
+		}
 	}
 	UpdateStreaming() {
 		// Track clients to remove due to timeout (can't modify Map during iteration)

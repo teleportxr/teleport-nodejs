@@ -11,6 +11,8 @@ const node_encoder= require("../protocol/encoders/node_encoder.js");
 const resource_encoder= require("../protocol/encoders/resource_encoder.js");
 const WebRtcConnectionManager = require('../connections/webrtcconnectionmanager');
 const resources= require("../scene/resources.js");
+const nd= require("../scene/node.js");
+const movement_encoder= require("../protocol/encoders/movement_encoder.js");
 const { BackgroundMode } = require("../core/core.js");
 
 
@@ -98,8 +100,23 @@ class Client {
 		this.currentOriginState=new OriginState();
 		this.currentLightingState=new LightingState();
 		// Latest head pose reported by the client (node.Pose), or null before the first
-		// NodePosesMessage. Used server-side for proximity-based audio selection.
+		// NodePosesMessage. Used server-side for proximity-based audio selection and by
+		// motion controllers. In the client's STAGE space, server axes standard.
 		this.currentHeadPose=null;
+		// Server time (us) the current head pose arrived, and the sample before it.
+		// Poses arrive at ~10 Hz but the motion tick runs faster, so a controller needs
+		// to know whether what it is reading is fresh.
+		this.currentHeadPoseTimeUs=0;
+		this.previousHeadPose=null;
+		this.previousHeadPoseTimeUs=0;
+		// uid -> NodePoseDynamic for any pose-path-assigned nodes (controllers, hands).
+		// Empty unless this client was sent AssignNodePosePath, which no Node server does yet.
+		this.currentNodePoses=new Map();
+		// Motion controllers driving nodes for this client, run once per motion tick.
+		// See client/motion/. Empty unless the host application registers one.
+		this.motionControllers=[];
+		// uid -> pose queued by a controller this tick, flushed by SendNodeMovements().
+		this.pendingNodeMovements=new Map();
 		// When true, the SetupCommand tells the client to send its microphone track
 		// (needed for the audio SFU). Set by the host before Start(); default off.
 		this.acceptMicrophone=false;
@@ -130,9 +147,6 @@ class Client {
 			}
 		}
 		return false;
-	}
-	tick(timestamp){
-		this.geometryService.GetNodesToSend();
 	}
     streamingConnectionStateChanged(newState)
     {
@@ -404,6 +418,90 @@ class Client {
         else
             this.signalingSend(array);
     }
+	//! Send pre-encoded command bytes on the reliable channel.
+	//! SendCommand() goes through the reflective encoder, which logs every field; that is
+	//! fine for the handful of setup commands but not for anything sent per tick.
+	SendCommandBytes(array){
+		if(this.webRtcConnection && this.webRtcConnection.isReliableOpen())
+		{
+			this.webRtcConnection.sendReliable(array);
+			return true;
+		}
+		// Movement is per-tick state, not setup: if the reliable channel is not up there
+		// is nothing worth queueing, and the next tick will carry fresher data.
+		return false;
+	}
+	//! Register a motion controller to drive one or more of this client's nodes.
+	//! Controllers run once per motion tick, in registration order. See client/motion/.
+	AddMotionController(controller){
+		if(!controller)
+			return;
+		if(this.motionControllers.indexOf(controller)<0)
+			this.motionControllers.push(controller);
+	}
+	RemoveMotionController(controller){
+		const i=this.motionControllers.indexOf(controller);
+		if(i>=0)
+			this.motionControllers.splice(i,1);
+	}
+	//! Queue a parent-local transform for a node, to be flushed by SendNodeMovements().
+	//! Coalesced by uid: the last pose queued in a tick is the one that goes out.
+	//! pose is {position, orientation, scale?} in the SERVER's axes standard.
+	QueueNodeMovement(uid,pose){
+		if(!uid||!pose)
+			return;
+		this.pendingNodeMovements.set(BigInt(uid),pose);
+	}
+	//! Run this client's motion controllers, then send whatever they queued.
+	//! Called once per motion tick by ClientManager.
+	UpdateMotion(dtSeconds,nowUs){
+		if(!this.webRtcConnected)
+			return;
+		for(const c of this.motionControllers)
+		{
+			// One controller throwing must not stop the others, nor take down the tick.
+			try { c.update(dtSeconds,this,nowUs); }
+			catch(err) { console.error("Motion controller failed for client "+this.clientID+": "+(err&&err.stack?err.stack:err)); }
+		}
+		this.SendNodeMovements(nowUs);
+	}
+	//! Flush queued node movements as a single UpdateNodeMovementCommand.
+	//! Skips nodes the client has not acknowledged: until it has the node, an update for
+	//! it is buffered client-side at best and wasted reliable bandwidth at worst.
+	SendNodeMovements(nowUs){
+		if(this.pendingNodeMovements.size==0)
+			return;
+		if(!this.webRtcConnection||!this.webRtcConnection.isReliableOpen())
+		{
+			this.pendingNodeMovements.clear();
+			return;
+		}
+		const server_time_us=BigInt(Math.round(nowUs!==undefined?nowUs:core.getTimestampUs()));
+		const fromAxes=this.scene?this.scene.serverAxesStandard:core.AxesStandard.NotInitialized;
+		const toAxes=this.clientAxesStandard;
+		const convert=(fromAxes!==toAxes&&toAxes!==core.AxesStandard.NotInitialized&&fromAxes!==core.AxesStandard.NotInitialized);
+		const updates=[];
+		for(const [uid,pose] of this.pendingNodeMovements)
+		{
+			if(!this.geometryService.WasNodeAcknowledged(uid))
+				continue;
+			const u=new command.MovementUpdate();
+			u.server_time_us=server_time_us;
+			// Parent-local: these nodes hang off the client's origin node.
+			u.isGlobal=false;
+			u.nodeID=uid;
+			const scale=pose.scale||{x:1,y:1,z:1};
+			u.position=convert?core.ConvertPosition(fromAxes,toAxes,pose.position):pose.position;
+			u.rotation=convert?core.ConvertRotation(fromAxes,toAxes,pose.orientation):pose.orientation;
+			u.scale   =convert?core.ConvertScale(fromAxes,toAxes,scale):scale;
+			// Velocity deliberately left zero — see the note on MovementUpdate.
+			updates.push(u);
+		}
+		this.pendingNodeMovements.clear();
+		if(updates.length==0)
+			return;
+		this.SendCommandBytes(movement_encoder.buildUpdateNodeMovement(updates));
+	}
     // We call StartStreaming once the SetupCommand has been acknowledged.
     StartStreaming()
     {
@@ -474,38 +572,77 @@ class Client {
 	{
 		if (data.byteLength<message.NodePosesMessage.sizeof())
 		{
-			console.log("Client: Received malformed NodePosesMessage packet of length: ",data.length);
+			console.log("Client: Received malformed NodePosesMessage packet of length: ",data.byteLength);
 			return;
 		}
         var msg			=new message.NodePosesMessage();
-		var dataView	=new DataView(data,0,data.byteLength);
+		// Same three-transport argument shapes as ReceiveAcknowledgement; see the note there.
+		var dataView	=ArrayBuffer.isView(data)
+			?new DataView(data.buffer,data.byteOffset,data.byteLength)
+			:new DataView(data,0,data.byteLength);
 		var byteOffset	=0;
 		msg.messageType = dataView.getUint8(byteOffset, core.endian);
 		msg.timestamp = dataView.getBigUint64(byteOffset+1, core.endian);
 		byteOffset		=msg.Pose_headPose.decodeOrientationPositionFromDataView(dataView, byteOffset+9);
 		msg.uint16_numPoses = dataView.getUint16(byteOffset, core.endian);
 		byteOffset+=2;
-		if (data.byteLength!=message.NodePosesMessage.sizeof()+msg.uint16_numPoses*28)
+		// Each trailing pose is a teleport::core::NodePose: uid(8) + PoseDynamic_packed(52).
+		if (data.byteLength!=message.NodePosesMessage.sizeof()+msg.uint16_numPoses*nd.NODE_POSE_SIZE)
 		{
-			console.log("Client: Received malformed NodePosesMessage packet of length: ",data.length);
+			console.log("Client: Received malformed NodePosesMessage packet of length: ",data.byteLength,
+				" expected ",message.NodePosesMessage.sizeof()+msg.uint16_numPoses*nd.NODE_POSE_SIZE,
+				" for ",msg.uint16_numPoses," poses.");
 			return;
 		}
 		msg.nodePoses = new Array(msg.uint16_numPoses);
 		for(let i=0; i <msg.uint16_numPoses; i++)
 		{
-			msg.nodePoses[i] = new NodePoseDynamic();
-			byteOffset = msg.nodePoses[i].decodeOrientationPositionFromDataView(dataView,byteOffset);
+			msg.nodePoses[i] = new nd.NodePoseDynamic();
+			byteOffset = msg.nodePoses[i].decodeFromDataView(dataView,byteOffset);
 		}
 		//console.log("Client: Received ", msg.uint16_numPoses, " node poses.");
 		this.ProcessNodePoses(msg.Pose_headPose,msg.uint16_numPoses, msg.nodePoses);
 	}
+	//! Poses arrive in the CLIENT's axes standard; everything server-side works in the
+	//! server's. Convert on the way in, exactly as the C++ server does in
+	//! ClientMessaging::receiveNodePoses. Returns a plain {position,orientation,scale}.
+	ConvertPoseFromClientAxes(pose)
+	{
+		if(!pose)
+			return pose;
+		const from=this.clientAxesStandard;
+		// The scene owns the server's axes standard, as SendNode does. With no scene
+		// (unit tests, pre-SetScene) there is nothing to convert to, so pass through.
+		const to=this.scene?this.scene.serverAxesStandard:core.AxesStandard.NotInitialized;
+		if(from===core.AxesStandard.NotInitialized||to===core.AxesStandard.NotInitialized||from===to)
+			return pose;
+		return core.ConvertPose(from,to,pose);
+	}
 	ProcessNodePoses(headPose,numPoses,nodePoses)
 	{
 		//console.log("Client: ProcessNodePoses ", numPoses, " poses.");
-		// Retain the head pose as this client's current world position, for
-		// proximity-based audio source selection (see src/mic-router.js).
+		// Retain the head pose as this client's current position, for proximity-based
+		// audio source selection (see src/mic-router.js) and for server-side motion
+		// controllers (see client/motion/). Still in the client's STAGE space —
+		// see GetHeadPosition() — but now in the server's axes standard.
 		if (headPose)
-			this.currentHeadPose = headPose;
+		{
+			this.previousHeadPose=this.currentHeadPose;
+			this.previousHeadPoseTimeUs=this.currentHeadPoseTimeUs;
+			this.currentHeadPose=this.ConvertPoseFromClientAxes(headPose);
+			this.currentHeadPoseTimeUs=core.getTimestampUs();
+		}
+		// Node poses (controllers, tracked hands) are retained by uid for any motion
+		// controller that wants them. Empty unless the client was sent AssignNodePosePath.
+		if (numPoses&&nodePoses)
+		{
+			for(const np of nodePoses)
+			{
+				if(!np)
+					continue;
+				this.currentNodePoses.set(np.uid,this.ConvertPoseFromClientAxes(np));
+			}
+		}
 	}
 	// This client's head position {x,y,z}, or null if not yet known.
 	//

@@ -173,10 +173,10 @@ class NodePosesMessage extends Message
 		this.nodePoses=[];
     }
     static sizeof(){
-        return Message.sizeof()+28+2;
+        return Message.sizeof()+node.POSE_PACKED_SIZE+2;
     }
     size(){
-        return ReceivedResourcesMessage.sizeof();
+        return NodePosesMessage.sizeof();
     }
 };
 

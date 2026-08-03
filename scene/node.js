@@ -16,6 +16,16 @@ const NodeDataType =
 	AudioEmitter:9		// Reserved. Audio is bound via the track SDP mid = emitting node uid; not carried in the node payload.
 };
 
+//! Wire size of teleport::core::Pose_packed: vec4 orientation then vec3 position.
+//! NB: this is NOT Pose.sizeof(), which is the 40-byte unpacked transform (position,
+//! orientation, scale) written into the Node payload. The packed form carries no scale.
+const POSE_PACKED_SIZE = 28;
+//! Wire size of teleport::core::PoseDynamic_packed: Pose_packed then vec3 velocity
+//! then vec3 angularVelocity.
+const POSE_DYNAMIC_PACKED_SIZE = POSE_PACKED_SIZE + (3*4) + (3*4);	// 52
+//! Wire size of teleport::core::NodePose: uid then PoseDynamic_packed.
+const NODE_POSE_SIZE = 8 + POSE_DYNAMIC_PACKED_SIZE;				// 60
+
 class Pose
 {
     constructor()
@@ -57,14 +67,18 @@ class Pose
 		this.position.x = dataView.getFloat32(byteOffset+16, core.endian);
 		this.position.y = dataView.getFloat32(byteOffset+20, core.endian);
 		this.position.z = dataView.getFloat32(byteOffset+24, core.endian);
-		return byteOffset+28;
+		return byteOffset+POSE_PACKED_SIZE;
 	}
 };
 
-class PoseDynamic
+//! A pose with its linear and angular velocity. Extends Pose so that position,
+//! orientation and scale are members of this object: the decode and encode paths
+//! below address them directly, and before this was a subclass they resolved to
+//! undefined (nothing exercised them, so it went unnoticed).
+class PoseDynamic extends Pose
 {
 	constructor(){
-		this.pose=new Pose();
+		super();
 		this.velocity={x:0.0, y:0.0, z:0.0 };
 		this.angularVelocity={x:0.0, y:0.0, z:0.0 };
 	}
@@ -108,7 +122,7 @@ class PoseDynamic
 		this.angularVelocity.x = dataView.getFloat32(byteOffset+40, core.endian);
 		this.angularVelocity.y = dataView.getFloat32(byteOffset+44, core.endian);
 		this.angularVelocity.z = dataView.getFloat32(byteOffset+48, core.endian);
-		return byteOffset+28;
+		return byteOffset+POSE_DYNAMIC_PACKED_SIZE;
 	}
 };
 
@@ -125,9 +139,9 @@ class NodePoseDynamic extends PoseDynamic
         return NodePoseDynamic.sizeof();
     }
 	decodeFromDataView(dataView, byteOffset) {
-		this.uid = dataView.getBigInt64(byteOffset, core.endian);
+		this.uid = dataView.getBigUint64(byteOffset, core.endian);
 		this.decodeOrientationPositionVelAngVelFromDataView(dataView,byteOffset+8)
-		return byteOffset+28;
+		return byteOffset+NODE_POSE_SIZE;
 	}
 }
 
@@ -390,4 +404,5 @@ class Node {
 	}
 };
 
-module.exports = {NodeDataType,Pose,PoseDynamic,NodePoseDynamic, Node, SoundComponent };
+module.exports = {NodeDataType,Pose,PoseDynamic,NodePoseDynamic, Node, SoundComponent,
+	POSE_PACKED_SIZE, POSE_DYNAMIC_PACKED_SIZE, NODE_POSE_SIZE };

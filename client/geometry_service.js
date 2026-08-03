@@ -573,6 +573,13 @@ class GeometryService {
 			res.AcknowledgeBy(this.clientID);
 		}
 	}
+	//! Has this client confirmed receipt of this resource? False for anything we have
+	//! never tracked. Used to gate per-tick updates that are meaningless until the
+	//! client actually has the node (see Client.SendNodeMovements).
+	WasNodeAcknowledged(resource_uid) {
+		const res = GeometryService.trackedResources.get(resource_uid);
+		return res ? res.WasAcknowledgedByClient(this.clientID) : false;
+	}
 }
 
 module.exports = { GeometryService };

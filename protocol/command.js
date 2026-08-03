@@ -146,6 +146,73 @@ class SetLightingCommand extends AckedCommand
 }
 
 
+//! Wire size of teleport::core::MovementUpdate. Packed, no padding:
+//! int64 server_time_us(8) bool isGlobal(1) uid nodeID(8) vec3 position(12)
+//! vec4 rotation(16) vec3 scale(12) vec3 velocity(12) vec3 angularVelocityAxis(12)
+//! float angularVelocityAngle(4).
+const MOVEMENT_UPDATE_SIZE = 85;
+
+//! One node's transform at a moment in server-session time, as carried by
+//! UpdateNodeMovementCommand. Mirrors teleport::core::MovementUpdate.
+//!
+//! isGlobal selects whether the transform is in the server's global space or local to
+//! the node's parent. We send parent-local (false), matching the C++ server: the client
+//! writes the update straight into its local transform either way, and a node parented
+//! under a client's origin must be positioned relative to that origin.
+//!
+//! velocity and angularVelocity are for client-side extrapolation to predicted display
+//! time. Leave them zero unless you mean it: the C++ client latches a heavily damped
+//! smoothing filter (~0.0166 per frame) the first time it sees a non-zero velocity, and
+//! never unlatches it. See ClientRender/Node.cpp TickExtrapolatedTransform.
+class MovementUpdate
+{
+	constructor(){
+		this.server_time_us=BigInt(0);		//!< Microseconds since SetupCommand.startTimestamp_utc_unix_us.
+		this.isGlobal=false;
+		this.nodeID=BigInt(0);
+		this.position={x:0.0, y:0.0, z:0.0};
+		this.rotation={x:0.0, y:0.0, z:0.0, w:1.0};
+		this.scale={x:1.0, y:1.0, z:1.0};
+		this.velocity={x:0.0, y:0.0, z:0.0};
+		this.angularVelocityAxis={x:0.0, y:0.0, z:0.0};
+		this.angularVelocityAngle=0.0;
+	}
+	static sizeof(){
+		return MOVEMENT_UPDATE_SIZE;
+	}
+	size(){
+		return MovementUpdate.sizeof();
+	}
+	encodeIntoDataView(dataView,byteOffset){
+		dataView.setBigInt64(byteOffset,BigInt(this.server_time_us),core.endian);
+		byteOffset+=8;
+		byteOffset=core.put_uint8(dataView,byteOffset,this.isGlobal?1:0);
+		byteOffset=core.put_uint64(dataView,byteOffset,this.nodeID);
+		byteOffset=core.put_vec3(dataView,byteOffset,this.position);
+		byteOffset=core.put_vec4(dataView,byteOffset,this.rotation);
+		byteOffset=core.put_vec3(dataView,byteOffset,this.scale);
+		byteOffset=core.put_vec3(dataView,byteOffset,this.velocity);
+		byteOffset=core.put_vec3(dataView,byteOffset,this.angularVelocityAxis);
+		byteOffset=core.put_float32(dataView,byteOffset,this.angularVelocityAngle);
+		return byteOffset;
+	}
+}
+
+//! Sent from server to client to move nodes that have already been streamed.
+//! The fixed-size header is followed on the wire by updatesCount MovementUpdate records;
+//! protocol/encoders/movement_encoder.js writes both. Only nodes encoded with
+//! stationary=false will move — the client early-outs on isStatic.
+class UpdateNodeMovementCommand extends Command
+{
+	constructor(){
+		super();
+		this.CommandPayloadType_commandPayloadType=CommandPayloadType.UpdateNodeMovement;
+		this.uint64_updatesCount=BigInt(0);		//!< C++ size_t; 8 bytes.
+	}
+	static sizeof(){ return 9; }	// 1 tag + 8 updatesCount
+	size(){ return UpdateNodeMovementCommand.sizeof(); }
+}
+
 //! Sent from server to client when the set of audio tracks delivered to a client changes.
 //! The fixed-size header is followed on the wire by addedCount AddedEntry records
 //! (uint8 midLen + midLen UTF-8 bytes + uint64 sourceClientUid) then removedCount
@@ -175,4 +242,5 @@ class AudioParticipantStateChangeCommand extends Command
 	size() { return AudioParticipantStateChangeCommand.sizeof(); }
 }
 
-module.exports= {Command,CommandPayloadType,SetupCommand,AcknowledgeHandshakeCommand,SetOriginNodeCommand,SetLightingCommand,AudioSourceMappingCommand,AudioParticipantStateChangeCommand};
+module.exports= {Command,CommandPayloadType,SetupCommand,AcknowledgeHandshakeCommand,SetOriginNodeCommand,SetLightingCommand,AudioSourceMappingCommand,AudioParticipantStateChangeCommand,
+	MovementUpdate,UpdateNodeMovementCommand,MOVEMENT_UPDATE_SIZE};

@@ -38,6 +38,7 @@
     "./client/avatar_validator": "./client/avatar_validator.js",
     "./client/avatar_importer": "./client/avatar_importer.js",
     "./client/gltf_measure": "./client/gltf_measure.js",
+    "./client/motion": "./client/motion/index.js",
     "./utils/redact": "./utils/redact.js",
     "./connections/webrtcconnectionmanager": "./connections/webrtcconnectionmanager.js",
     "./protocol/avatars": "./protocol/avatars.js",
