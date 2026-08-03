@@ -95,8 +95,8 @@ class FollowCameraController extends NodeMotionController
 		if(!client.currentHeadPose)
 			return "no head pose received yet (client sends these at 10 Hz once it has an origin)";
 		const gs=client.geometryService;
-		if(gs&&typeof gs.WasNodeAcknowledged==='function'&&!gs.WasNodeAcknowledged(this.nodeUid))
-			return "node "+this.nodeUid+" not yet acknowledged by the client, so movement is withheld";
+		if(gs&&typeof gs.WasNodeSent==='function'&&!gs.WasNodeSent(this.nodeUid))
+			return "node "+this.nodeUid+" has not been sent to the client yet, so movement is withheld";
 		return null;
 	}
 

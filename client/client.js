@@ -507,8 +507,9 @@ class Client {
 		this.SendNodeMovements(nowUs);
 	}
 	//! Flush queued node movements as a single UpdateNodeMovementCommand.
-	//! Skips nodes the client has not acknowledged: until it has the node, an update for
-	//! it is buffered client-side at best and wasted reliable bandwidth at worst.
+	//! Skips nodes we have not yet sent this client: until it has the node, an update for
+	//! it is buffered client-side at best and wasted reliable bandwidth at worst. We gate
+	//! on sent rather than acknowledged deliberately — see GeometryService.WasNodeSent.
 	SendNodeMovements(nowUs){
 		if(this.pendingNodeMovements.size==0)
 			return;
@@ -524,7 +525,7 @@ class Client {
 		const updates=[];
 		for(const [uid,pose] of this.pendingNodeMovements)
 		{
-			if(!this.geometryService.WasNodeAcknowledged(uid))
+			if(!this.geometryService.WasNodeSent(uid))
 				continue;
 			const u=new command.MovementUpdate();
 			u.server_time_us=server_time_us;

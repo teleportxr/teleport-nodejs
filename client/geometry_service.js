@@ -574,11 +574,25 @@ class GeometryService {
 		}
 	}
 	//! Has this client confirmed receipt of this resource? False for anything we have
-	//! never tracked. Used to gate per-tick updates that are meaningless until the
-	//! client actually has the node (see Client.SendNodeMovements).
+	//! never tracked.
 	WasNodeAcknowledged(resource_uid) {
 		const res = GeometryService.trackedResources.get(resource_uid);
 		return res ? res.WasAcknowledgedByClient(this.clientID) : false;
+	}
+	//! Has this node been put on the wire for this client? True from the moment we send
+	//! it, without waiting for the client to confirm.
+	//!
+	//! This, not WasNodeAcknowledged, is the right gate for per-tick updates such as
+	//! movement. Acknowledgement travels back over the client's own send path, and when
+	//! that path is broken the client can still be holding — and rendering — a node it
+	//! has never managed to acknowledge. Withholding movement then leaves it frozen for
+	//! the rest of the session. The C++ server takes the same view: it sends movement for
+	//! every streamed non-stationary node with no acknowledgement check at all
+	//! (GeometryStreamingService.cpp). Gating on "sent" still avoids the pointless
+	//! traffic of moving a node the client has not been given yet.
+	WasNodeSent(resource_uid) {
+		const res = GeometryService.trackedResources.get(resource_uid);
+		return res ? res.WasSentToClient(this.clientID) : false;
 	}
 }
 

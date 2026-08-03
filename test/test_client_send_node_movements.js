@@ -12,7 +12,7 @@ const core = require('../core/core');
 const NODE_A = 101n;
 const NODE_B = 102n;
 
-function makeStubClient({ reliableOpen = true, acknowledged = [NODE_A, NODE_B] } = {}) {
+function makeStubClient({ reliableOpen = true, sentNodes = [NODE_A, NODE_B] } = {}) {
 	const sent = [];
 	const c = Object.create(Client.prototype);
 	c.clientID = 1;
@@ -25,8 +25,8 @@ function makeStubClient({ reliableOpen = true, acknowledged = [NODE_A, NODE_B] }
 		isReliableOpen: () => reliableOpen,
 		sendReliable: (bytes) => { sent.push(bytes); return true; },
 	};
-	const ackSet = new Set(acknowledged.map((u) => BigInt(u)));
-	c.geometryService = { WasNodeAcknowledged: (uid) => ackSet.has(BigInt(uid)) };
+	const sentSet = new Set(sentNodes.map((u) => BigInt(u)));
+	c.geometryService = { WasNodeSent: (uid) => sentSet.has(BigInt(uid)) };
 	c.sent = sent;
 	return c;
 }
@@ -65,8 +65,8 @@ test('coalesces repeated queues for the same node within a tick', () => {
 	assert.strictEqual(dv.getFloat32(9 + 17, true), 9);
 });
 
-test('skips nodes the client has not acknowledged', () => {
-	const c = makeStubClient({ acknowledged: [NODE_A] });
+test('skips nodes that have not been sent to the client', () => {
+	const c = makeStubClient({ sentNodes: [NODE_A] });
 	c.QueueNodeMovement(NODE_A, POSE);
 	c.QueueNodeMovement(NODE_B, POSE);
 	c.SendNodeMovements(0);
@@ -75,8 +75,8 @@ test('skips nodes the client has not acknowledged', () => {
 	assert.strictEqual(dv.getBigUint64(9 + 9, true), NODE_A);
 });
 
-test('sends nothing when no node is acknowledged yet', () => {
-	const c = makeStubClient({ acknowledged: [] });
+test('sends nothing when no node has been sent yet', () => {
+	const c = makeStubClient({ sentNodes: [] });
 	c.QueueNodeMovement(NODE_A, POSE);
 	c.SendNodeMovements(0);
 	assert.strictEqual(c.sent.length, 0);
