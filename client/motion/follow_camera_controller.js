@@ -62,6 +62,58 @@ class FollowCameraController extends NodeMotionController
 		this.moving=false;
 		//! Smoothed horizontal ground speed, m/s.
 		this.speed=0.0;
+
+		//! Diagnostics. A follower that has never emitted anything reports why, every
+		//! reportEveryUs, because every reason for it sitting silent (no head pose, no
+		//! node, node not acknowledged) looks identical from the outside: no motion.
+		//! Once it has emitted, it goes quiet unless debug is on.
+		this.debug=opts.debug!==undefined?opts.debug
+			:(process.env.TELEPORT_FOLLOWER_DEBUG==='1'||process.env.TELEPORT_FOLLOWER_DEBUG==='true');
+		this.reportEveryUs=opts.reportEveryUs!==undefined?opts.reportEveryUs:5000000;
+		this.lastReportUs=0;
+		this.emitted=0;
+	}
+
+	//! Why is nothing happening? Returns a human-readable reason, or null if the
+	//! follower is working. Ordered to match the sequence update() goes through.
+	Diagnose(client)
+	{
+		if(!client.scene)
+			return "client has no scene (Client.SetScene not called yet)";
+		if(this.nodeRole&&!this.nodeUid)
+		{
+			const registry=client.clientManager?client.clientManager.clientNodes:null;
+			if(!registry)
+				return "no client node registry, so role '"+this.nodeRole+"' cannot be resolved";
+			return "no node with role '"+this.nodeRole+"' for this client yet"
+				+" (an avatar is only registered once the client accepts the avatar policy)";
+		}
+		if(!this.nodeUid)
+			return "no node to drive";
+		if(!client.scene.GetNode(this.nodeUid))
+			return "node "+this.nodeUid+" is not in the scene";
+		if(!client.currentHeadPose)
+			return "no head pose received yet (client sends these at 10 Hz once it has an origin)";
+		const gs=client.geometryService;
+		if(gs&&typeof gs.WasNodeAcknowledged==='function'&&!gs.WasNodeAcknowledged(this.nodeUid))
+			return "node "+this.nodeUid+" not yet acknowledged by the client, so movement is withheld";
+		return null;
+	}
+
+	Report(client,nowUs)
+	{
+		if(this.emitted&&!this.debug)
+			return;
+		if(nowUs-this.lastReportUs<this.reportEveryUs)
+			return;
+		this.lastReportUs=nowUs;
+		const reason=this.Diagnose(client);
+		if(reason)
+			console.log("FollowCameraController ["+client.clientID+"]: idle — "+reason);
+		else if(this.debug)
+			console.log("FollowCameraController ["+client.clientID+"]: node="+this.nodeUid
+				+" pos="+JSON.stringify(this.position)+" speed="+this.speed.toFixed(2)
+				+" moving="+this.moving+" emitted="+this.emitted);
 	}
 
 	//! Where the follower should ultimately be, given a head pose. Exposed separately
@@ -111,18 +163,20 @@ class FollowCameraController extends NodeMotionController
 
 	update(dtSeconds,client,nowUs)
 	{
-		if(!client||!client.scene)
+		if(!client)
 			return;
+		if(!client.scene)
+			return this.Report(client,nowUs);
 		const uid=this.ResolveNodeUid(client);
 		if(!uid)
-			return;
+			return this.Report(client,nowUs);
 		const node=client.scene.GetNode(uid);
 		if(!node)
-			return;
+			return this.Report(client,nowUs);
 		const basis=ax.BasisFor(client.scene.serverAxesStandard);
 		const target=this.ComputeTarget(client.currentHeadPose,basis);
 		if(!target)
-			return;
+			return this.Report(client,nowUs);
 
 		// First pose: snap, rather than gliding in from wherever the node happened to be.
 		if(!this.position)
@@ -132,6 +186,7 @@ class FollowCameraController extends NodeMotionController
 			this.speed=0.0;
 			this.moving=false;
 			this.Apply(client,node,basis,true);
+			this.Report(client,nowUs);
 			return;
 		}
 
@@ -158,6 +213,7 @@ class FollowCameraController extends NodeMotionController
 			this.speed=0.0;
 			if(this.animator)
 				this.animator.Update(this.speed,nowUs,client);
+			this.Report(client,nowUs);
 			return;
 		}
 
@@ -199,6 +255,7 @@ class FollowCameraController extends NodeMotionController
 		this.Apply(client,node,basis,false);
 		if(this.animator)
 			this.animator.Update(this.speed,nowUs,client);
+		this.Report(client,nowUs);
 	}
 
 	//! Write the follower's pose to the scene node and queue it for sending.
@@ -226,6 +283,7 @@ class FollowCameraController extends NodeMotionController
 			cm.QueueNodeMovementForAll(this.nodeUid,pose);
 		else
 			client.QueueNodeMovement(this.nodeUid,pose);
+		this.emitted++;
 	}
 }
 
