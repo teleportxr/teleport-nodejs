@@ -117,6 +117,9 @@ class Client {
 		this.motionControllers=[];
 		// uid -> pose queued by a controller this tick, flushed by SendNodeMovements().
 		this.pendingNodeMovements=new Map();
+		// One-shot log latches; see ProcessNodePoses and SendNodeMovements.
+		this.loggedFirstHeadPose=false;
+		this.loggedFirstMovement=false;
 		// When true, the SetupCommand tells the client to send its microphone track
 		// (needed for the audio SFU). Set by the host before Start(); default off.
 		this.acceptMicrophone=false;
@@ -542,7 +545,15 @@ class Client {
 		this.pendingNodeMovements.clear();
 		if(updates.length==0)
 			return;
-		this.SendCommandBytes(movement_encoder.buildUpdateNodeMovement(updates));
+		const ok=this.SendCommandBytes(movement_encoder.buildUpdateNodeMovement(updates));
+		// One-shot, for the same reason as the head-pose line above: it marks the moment
+		// server-driven motion actually reaches the wire.
+		if(ok&&!this.loggedFirstMovement)
+		{
+			this.loggedFirstMovement=true;
+			console.log("Client "+this.clientID+": first node movement sent ("+updates.length
+				+" update(s), node "+updates[0].nodeID+").");
+		}
 	}
     // We call StartStreaming once the SetupCommand has been acknowledged.
     StartStreaming()
@@ -669,6 +680,15 @@ class Client {
 		// see GetHeadPosition() — but now in the server's axes standard.
 		if (headPose)
 		{
+			// One-shot: the presence or absence of this line in a server log is the
+			// difference between "the client never reported its pose" and "it did, and
+			// something downstream dropped it". Cheap to keep, decisive to have.
+			if(!this.loggedFirstHeadPose)
+			{
+				this.loggedFirstHeadPose=true;
+				console.log("Client "+this.clientID+": first head pose received"
+					+" ("+numPoses+" node poses, axes "+this.clientAxesStandard+").");
+			}
 			this.previousHeadPose=this.currentHeadPose;
 			this.previousHeadPoseTimeUs=this.currentHeadPoseTimeUs;
 			this.currentHeadPose=this.ConvertPoseFromClientAxes(headPose);
