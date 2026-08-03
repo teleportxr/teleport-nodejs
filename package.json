@@ -20,14 +20,14 @@
   "version": "1.0.100",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/simul/teleport-nodejs.git"
+    "url": "git+https://github.com/teleportxr/teleport-nodejs.git"
   },
   "author": "rvkennedy",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/simul/teleport-nodejs/issues"
+    "url": "https://github.com/teleportxr/teleport-nodejs/issues"
   },
-  "homepage": "https://github.com/simul/teleport-nodejs#readme",
+  "homepage": "https://github.com/teleportxr/teleport-nodejs#readme",
   "exports": {
     ".": "./index.js",
     "./signaling": "./signaling.js",
