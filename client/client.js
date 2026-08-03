@@ -194,7 +194,48 @@ class Client {
 	onDataChannelsOpen()
 	{
 		console.log("[T+"+this.elapsedMsSinceStart()+"ms, conn+"+this.elapsedMsSinceConnected()+"ms] data channels open for client "+this.clientID+" — triggering immediate UpdateStreaming tick.");
+		this.RearmAckedCommands();
 		setImmediate(this.UpdateStreaming.bind(this));
+	}
+	//! Force the acked session commands to be re-sent after a (re)connection.
+	//!
+	//! The client throws this state away whenever the stream drops:
+	//! SessionClient::Disconnect sets both receivedInitialPos and receivedLightingAckId to
+	//! zero, and InstanceRenderer::OnVideoStreamClosed resets receivedInitialPos again.
+	//!
+	//! receivedInitialPos is not just bookkeeping — it is the gate on whether the client
+	//! sends head and controller poses at all (`if (poseValidCounter)` in
+	//! SessionClient::Frame). Because we still had the origin marked acknowledged from
+	//! before the drop, we never re-sent it, so a client that lost its connection and
+	//! recovered stopped reporting its pose for the rest of the session. Anything
+	//! server-side that depends on the head pose — proximity audio, motion controllers —
+	//! silently froze with it.
+	//!
+	//! Re-sending is safe and self-correcting: each command's counter increments on every
+	//! send and the client ignores any counter not greater than the one it holds, so a
+	//! stale or duplicated command can never win.
+
+	// TODO: This should not strictly be necessary if clients are correctly implemented
+	RearmAckedCommands()
+	{
+		this.RearmAckedState(this.currentOriginState,"origin");
+		this.RearmAckedState(this.currentLightingState,"lighting");
+	}
+	RearmAckedState(st,what)
+	{
+		if(!st)
+			return;
+		// Never sent: the normal path in UpdateStreaming will send it as usual.
+		if(!st.sent&&!st.acknowledged)
+			return;
+		// Already pending: leave its resend timer alone.
+		if(!st.acknowledged&&!st.givenUp)
+			return;
+		console.log("Client "+this.clientID+": re-arming "+what+" after (re)connection.");
+		st.acknowledged=false;
+		st.serverTimeSentUs=BigInt(0);
+		st.resendCount=0;
+		st.givenUp=false;
 	}
 	receivedMessageReliable(id,pkt)
 	{
