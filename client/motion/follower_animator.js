@@ -59,6 +59,10 @@ class FollowerAnimator
 				url:spec.url,
 				duration:spec.duration!==undefined?spec.duration:0,
 				refSpeed:spec.refSpeed!==undefined?spec.refSpeed:(state===AnimState.Run?3.5:1.4),
+				// The frame the clip is authored in. Omit for a clip in the server's own
+				// frame; a .vrma is glTF, so 'gl'. It must agree with the avatar the clip is
+				// retargeted onto, which arrives as a MeshPointer with its own declaration.
+				axesStandard:spec.axesStandard!==undefined?spec.axesStandard:spec.axes_standard,
 				uid:null,
 			};
 		}
@@ -125,7 +129,7 @@ class FollowerAnimator
 		{
 			const clip=this.clips[state];
 			if(clip.uid===null)
-				clip.uid=BigInt(resources.GetOrAddAnimationPointer(clip.url));
+				clip.uid=BigInt(resources.GetOrAddAnimationPointer(clip.url,clip.axesStandard));
 		}
 		for(const c of clients)
 		{

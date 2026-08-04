@@ -85,6 +85,59 @@ test('every resource type sizes its own body, not the base class pointer body', 
 	}
 });
 
+test('a pointer body ends with the axes standard of the asset it points at', () => {
+	// Appended after the url so that a client built before the field simply stops reading at
+	// the end of the url. NotInitialized means "the same as the server's scene", which is why
+	// only assets that disagree — anything glTF, against a Z-up server — need declaring.
+	const uid = resources.GetOrAddMesh('/axes-test-' + Math.random().toString(36).slice(2) + '.vrm', 'gl');
+	const res = resources.GetResourceFromUid(uid);
+	assert.strictEqual(res.axesStandard, core.AxesStandard.GlStyle);
+
+	const buffer = new ArrayBuffer(res.encodedSize());
+	const written = resource_encoder.EncodeResource(res, buffer);
+	const dv = new DataView(buffer);
+	// Last byte of the body.
+	assert.strictEqual(dv.getUint8(written - 1), core.AxesStandard.GlStyle);
+	// And it is inside the declared payload size, not past it.
+	assert.strictEqual(Number(dv.getBigUint64(0, core.endian)), written - 8);
+});
+
+test('an undeclared asset encodes NotInitialized, meaning "same as the server"', () => {
+	const uid = resources.GetOrAddMesh('/undeclared-' + Math.random().toString(36).slice(2) + '.glb');
+	const res = resources.GetResourceFromUid(uid);
+	const buffer = new ArrayBuffer(res.encodedSize());
+	const written = resource_encoder.EncodeResource(res, buffer);
+	assert.strictEqual(new DataView(buffer).getUint8(written - 1), core.AxesStandard.NotInitialized);
+	assert.strictEqual(core.AxesStandard.NotInitialized, 0);
+});
+
+test('a texture pointer carries no axes standard', () => {
+	// A texture has no geometric frame. Cubemap orientation is handled instead by serving a
+	// per-axes variant of the file, so adding a field here would be meaningless.
+	const uid = resources.GetOrAddTexture('/tex-' + Math.random().toString(36).slice(2) + '.ktx2');
+	const res = resources.GetResourceFromUid(uid);
+	assert.strictEqual(res.carriesAxesStandard(), false);
+	const buffer = new ArrayBuffer(res.encodedSize());
+	const written = resource_encoder.EncodeResource(res, buffer);
+	// The body ends with the url's last character, not an axes byte.
+	const dv = new DataView(buffer);
+	assert.strictEqual(dv.getUint8(written - 1), '2'.charCodeAt(0));
+});
+
+test('axes standards can be named or given as wire values', () => {
+	const P = resources.ParseAxesStandard;
+	assert.strictEqual(P('gl'), core.AxesStandard.GlStyle);
+	assert.strictEqual(P('GLTF'), core.AxesStandard.GlStyle);
+	assert.strictEqual(P('engineering'), core.AxesStandard.EngineeringStyle);
+	assert.strictEqual(P('unity'), core.AxesStandard.UnityStyle);
+	assert.strictEqual(P('unreal'), core.AxesStandard.UnrealStyle);
+	assert.strictEqual(P(core.AxesStandard.GlStyle), core.AxesStandard.GlStyle);
+	// Unknown or omitted both mean "the server's own", so a typo degrades to today's
+	// behaviour rather than silently rotating an asset.
+	assert.strictEqual(P(undefined), core.AxesStandard.NotInitialized);
+	assert.strictEqual(P('nonsense'), core.AxesStandard.NotInitialized);
+});
+
 test('an AnimationPointer encodes as payload type 14 with a size prefix', () => {
 	const uid = resources.GetOrAddAnimationPointer('/avatar_anim/Running.vrma');
 	const res = resources.GetResourceFromUid(uid);

@@ -217,6 +217,25 @@ class Scene {
 				resources.GetOrAddCubemap(this.specularCubemapPath);
 			}
 		}
+		// Per-asset overrides for meshes, keyed by url. Only assets whose own frame differs
+		// from this scene's need listing — everything else is assumed to match the server,
+		// which is what the client falls back to. A glTF-family file (.glb/.vrm) is Y-up
+		// right-handed whatever the scene around it uses, so it belongs here:
+		//
+		//   "meshes": { "/generic_avatar.vrm": { "axes_standard": "gl" } }
+		//
+		// Declaring one here also registers it, so a mesh referenced only by a node created
+		// later still carries the right standard when it is streamed.
+		if(j.meshes)
+		{
+			for (let [url, sub_obj] of Object.entries(j.meshes)) {
+				const axes=sub_obj?(sub_obj.axes_standard!==undefined?sub_obj.axes_standard:sub_obj.axesStandard):undefined;
+				const uid=resources.GetOrAddMesh(url,axes);
+				if(axes!==undefined)
+					console.log("Mesh "+url+" declared as axes standard '"+axes+"' ("
+						+resources.ParseAxesStandard(axes)+"), uid "+uid);
+			}
+		}
 		if(j.font_atlases)
 		{
 			const j_fonts=j.font_atlases;

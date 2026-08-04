@@ -19,6 +19,14 @@ class Resource {
 		// True for environment cubemaps (background/diffuse/specular). Such resources are
 		// served per-client in the variant matching the client's axes standard.
 		this.isCubemap = false;
+		//! The axes standard the asset behind this url is authored in, for pointer types.
+		//!
+		//! NotInitialized means "the same as the server's scene", which is the common case and
+		//! what the client assumes when the field is absent. It needs setting only for assets
+		//! that disagree with the server: a glTF-family file (.glb/.vrm/.vrma) is always Y-up
+		//! right-handed (GlStyle) regardless of what the scene around it uses, and the client
+		//! applies a real conversion from this standard to its own.
+		this.axesStandard = core.AxesStandard.NotInitialized;
 	}
 	//! Buffer to allocate before encoding. Includes the 8-byte payload-size prefix that
 	//! resource_encoder.EncodeResource writes ahead of the body, as FontAtlas.encodedSize
@@ -36,8 +44,16 @@ class Resource {
 		const url=urlOverride||this.url||"";
 		const root=(url.search("://")==-1)?Resource.defaultPathRoot:"";
 		// put_string writes one byte per UTF-16 code unit; the UTF-8 length is an upper
-		// bound on that, so allocating by it is always enough.
-		return 19+Buffer.byteLength(root+url,'utf8');
+		// bound on that, so allocating by it is always enough. The +1 is the trailing
+		// axes-standard byte.
+		return 20+Buffer.byteLength(root+url,'utf8');
+	}
+	//! Does this pointer type carry an axes standard? Only the ones whose asset has a
+	//! geometric frame: a texture does not, and a cubemap's orientation is handled instead by
+	//! serving a per-axes variant of the file (see GetOrAddCubemap).
+	carriesAxesStandard() {
+		return this.type == core.GeometryPayloadType.MeshPointer
+			|| this.type == core.GeometryPayloadType.AnimationPointer;
 	}
 	//! urlOverride, if supplied, replaces this.url for this encoding only (e.g. to send a
 	//! client-specific cubemap variant). The stored this.url is left untouched.
@@ -48,6 +64,10 @@ class Resource {
 		if (url.search("://") == -1)
 			url = Resource.defaultPathRoot + url;
 		byteOffset = core.put_string(dataView, byteOffset, url);
+		// Appended after the url, so a client built before this field existed simply stops
+		// reading at the end of the url and is unaffected.
+		if (this.carriesAxesStandard())
+			byteOffset = core.put_uint8(dataView, byteOffset, this.axesStandard);
 		return byteOffset;
 	}
 }
@@ -340,9 +360,49 @@ function InsertCubemapAxesSuffix(url, suffix) {
 	return url.substring(0, dot) + "_" + suffix + url.substring(dot);
 }
 
+//! Parse an axes standard written as a friendly name, as scene.json and the server config
+//! use. Accepts a number too, so a raw wire value can be given where that is clearer.
+//! Returns core.AxesStandard.NotInitialized for anything unrecognised, which means "same as
+//! the server's scene".
+function ParseAxesStandard(value) {
+	if (value === undefined || value === null || value === "")
+		return core.AxesStandard.NotInitialized;
+	if (typeof value === "number")
+		return value;
+	const name = String(value).trim().toLowerCase();
+	switch (name) {
+		// glTF and everything built on it - .glb, .vrm, .vrma - is Y-up right-handed.
+		case "gl": case "gltf": case "glstyle": case "opengl":
+			return core.AxesStandard.GlStyle;
+		case "engineering": case "eng": case "engineeringstyle": case "zup":
+			return core.AxesStandard.EngineeringStyle;
+		case "unity": case "unitystyle":
+			return core.AxesStandard.UnityStyle;
+		case "unreal": case "unrealstyle":
+			return core.AxesStandard.UnrealStyle;
+		default:
+			console.warn("Unknown axes standard '" + value + "'; treating as the server's own.");
+			return core.AxesStandard.NotInitialized;
+	}
+}
+
+//! Record the axes standard an already-registered resource's asset is authored in.
+//! Only needed where the asset disagrees with the server's own scene; see Resource.axesStandard.
+function SetResourceAxesStandard(uid, axesStandard) {
+	const res = GetResourceFromUid(uid);
+	if (!res)
+		return false;
+	res.axesStandard = ParseAxesStandard(axesStandard);
+	return true;
+}
+
 //! Get or add the mesh url as a resource.
-function GetOrAddMesh(url) {
-	return GetOrAddResourceFromUrl(core.GeometryPayloadType.MeshPointer, url);
+//! axesStandard is optional; omit it for an asset authored in the server's own frame.
+function GetOrAddMesh(url, axesStandard) {
+	const uid = GetOrAddResourceFromUrl(core.GeometryPayloadType.MeshPointer, url);
+	if (axesStandard !== undefined)
+		SetResourceAxesStandard(uid, axesStandard);
+	return uid;
 }
 
 //! Get or add an animation clip url as a resource. The client fetches the url and decodes
@@ -352,8 +412,14 @@ function GetOrAddMesh(url) {
 //! One uid identifies one axes-converted variant of one clip, exactly as for meshes and
 //! textures. Serving two axes standards from a single uid is not possible; mint a separate
 //! resource per (clip, axes standard) if that is ever needed.
-function GetOrAddAnimationPointer(url) {
-	return GetOrAddResourceFromUrl(core.GeometryPayloadType.AnimationPointer, url);
+//! axesStandard is optional; omit it for a clip authored in the server's own frame. A
+//! `.vrma` is glTF, so it is Y-up ("gl") whatever the scene around it uses — but it must
+//! agree with the avatar it will be retargeted onto, which is streamed as a MeshPointer.
+function GetOrAddAnimationPointer(url, axesStandard) {
+	const uid = GetOrAddResourceFromUrl(core.GeometryPayloadType.AnimationPointer, url);
+	if (axesStandard !== undefined)
+		SetResourceAxesStandard(uid, axesStandard);
+	return uid;
 }
 
 function AddFontAtlas(path) {
@@ -377,6 +443,8 @@ module.exports = {
 	SetNativeAnimationPayloadEnabled,
 	IsNativeAnimationPayloadEnabled,
 	GetOrAddAnimationPointer,
+	ParseAxesStandard,
+	SetResourceAxesStandard,
 	GetResourceFromUrl,
 	GetResourceUidFromUrl,
 	GetOrAddResourceUidFromUrl,
