@@ -23,6 +23,8 @@ test('encodeRemoveNodes produces size-prefixed payload matching the C++ wire for
 	assert.strictEqual(dataView.getUint8(8), core.GeometryPayloadType.RemoveNodes);
 	assert.strictEqual(core.GeometryPayloadType.RemoveNodes, 13,
 		'RemoveNodes must keep the C++ enum value (after MaterialPointer=12)');
+	assert.strictEqual(core.GeometryPayloadType.AnimationPointer, 14,
+		'AnimationPointer must keep the C++ enum value (after RemoveNodes=13)');
 	// Count and uids.
 	assert.strictEqual(dataView.getUint16(9, core.endian), 2);
 	assert.strictEqual(dataView.getBigUint64(11, core.endian), 5n);

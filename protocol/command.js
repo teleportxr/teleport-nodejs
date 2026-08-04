@@ -14,8 +14,11 @@ const CommandPayloadType =
 	UpdateNodeEnabledState:7,		
 	SetNodeHighlighted:8,			
 	ApplyNodeAnimation:9,			
-	UpdateNodeAnimationControlX:10,
-	SetNodeAnimationSpeed:11,			
+	//! Reserved. Never had a struct or a handler; the slot is held so the ids after it stay put.
+	Reserved_AnimationControl:10,
+	//! Do not send: the C++ client has no handler for this and treats it as an unknown command.
+	//! Use ApplyAnimation.speedUnitsPerSecond instead.
+	SetNodeAnimationSpeed:11,
 	SetupLighting:12,
 	UpdateNodeStructure:13,			
 	AssignNodePosePath:14,				
