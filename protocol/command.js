@@ -216,6 +216,64 @@ class UpdateNodeMovementCommand extends Command
 	size(){ return UpdateNodeMovementCommand.sizeof(); }
 }
 
+//! Wire size of ApplyAnimationCommand, tag included. Packed, no padding:
+//! tag(1) int32 animLayer(4) int64 timestampUs(8) uid nodeID(8) uid cacheID(8)
+//! uid animationID(8) float animTimeAtTimestamp(4) float speedUnitsPerSecond(4) bool loop(1).
+//! SessionClient::ReceiveNodeAnimationUpdate requires this size EXACTLY and silently drops
+//! anything else, so the command has no variable part and no room to grow.
+const APPLY_ANIMATION_COMMAND_SIZE = 46;
+
+//! Sent from server to client to say what a node's skeleton should be playing, and when.
+//!
+//! The client stores states on a timeline and interpolates between them, so dating a state
+//! slightly in the future is how a cross-fade is requested: the client snapshots what is
+//! playing now and blends to the new state over the intervening time. A timestamp of "now"
+//! gives a hard snap.
+//!
+//! cacheID zero means "the cache containing nodeID". Geometry caches are created client-side
+//! with client-local uids, so a server cannot name one; zero is the only value it can
+//! meaningfully send. See docs/protocol/service/server_to_client.rst.
+//!
+//! For a node whose content is a URL (a glTF/VRM avatar), address the node the server
+//! created — the client forwards the update to the skeletons inside the sub-scene.
+class ApplyAnimationCommand extends Command
+{
+	constructor(){
+		super();
+		this.CommandPayloadType_commandPayloadType=CommandPayloadType.ApplyNodeAnimation;
+		//! Must be 0: the client only ever processes layer 0.
+		this.animLayer=0;
+		//! Microseconds since SetupCommand.startTimestamp_utc_unix_us, when this state applies.
+		this.timestampUs=BigInt(0);
+		this.nodeID=BigInt(0);
+		//! Zero means "the cache containing nodeID".
+		this.cacheID=BigInt(0);
+		this.animationID=BigInt(0);
+		//! Where in the clip to be at timestampUs, in SECONDS from the clip's start.
+		this.animTimeAtTimestamp=0.0;
+		//! Playback-rate multiplier, NOT metres per second. 1.0 is the authored rate.
+		this.speedUnitsPerSecond=1.0;
+		this.loop=true;
+	}
+	static sizeof(){ return APPLY_ANIMATION_COMMAND_SIZE; }
+	size(){ return ApplyAnimationCommand.sizeof(); }
+	encodeIntoDataView(dataView,byteOffset){
+		byteOffset=core.put_uint8(dataView,byteOffset,this.CommandPayloadType_commandPayloadType);
+		byteOffset=core.put_int32(dataView,byteOffset,this.animLayer);
+		// setBigInt64, not put_uint64: timestampUs is signed on the wire and a client whose
+		// clock datum is ahead of ours legitimately sees negative values.
+		dataView.setBigInt64(byteOffset,BigInt(this.timestampUs),core.endian);
+		byteOffset+=8;
+		byteOffset=core.put_uint64(dataView,byteOffset,this.nodeID);
+		byteOffset=core.put_uint64(dataView,byteOffset,this.cacheID);
+		byteOffset=core.put_uint64(dataView,byteOffset,this.animationID);
+		byteOffset=core.put_float32(dataView,byteOffset,this.animTimeAtTimestamp);
+		byteOffset=core.put_float32(dataView,byteOffset,this.speedUnitsPerSecond);
+		byteOffset=core.put_uint8(dataView,byteOffset,this.loop?1:0);
+		return byteOffset;
+	}
+}
+
 //! Sent from server to client when the set of audio tracks delivered to a client changes.
 //! The fixed-size header is followed on the wire by addedCount AddedEntry records
 //! (uint8 midLen + midLen UTF-8 bytes + uint64 sourceClientUid) then removedCount
@@ -246,4 +304,5 @@ class AudioParticipantStateChangeCommand extends Command
 }
 
 module.exports= {Command,CommandPayloadType,SetupCommand,AcknowledgeHandshakeCommand,SetOriginNodeCommand,SetLightingCommand,AudioSourceMappingCommand,AudioParticipantStateChangeCommand,
-	MovementUpdate,UpdateNodeMovementCommand,MOVEMENT_UPDATE_SIZE};
+	MovementUpdate,UpdateNodeMovementCommand,MOVEMENT_UPDATE_SIZE,
+	ApplyAnimationCommand,APPLY_ANIMATION_COMMAND_SIZE};

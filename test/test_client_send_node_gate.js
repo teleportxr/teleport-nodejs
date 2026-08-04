@@ -15,6 +15,9 @@ function makeStubClient(opts) {
 	c.scene = {
 		GetNode: () => ({
 			name: 'stub-node',
+			// SendNode sizes the buffer from the node, because a mesh component's joint,
+			// animation and material lists are variable-length.
+			encodedSize: () => 64,
 			encodeIntoDataView: (_dv, off) => off + 1,
 		}),
 	};

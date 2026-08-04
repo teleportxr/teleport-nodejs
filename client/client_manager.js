@@ -100,6 +100,13 @@ class ClientManager
 		for (const [,cl] of this.clients)
 			cl.QueueNodeMovement(uid,pose);
 	}
+	//! Every connected client, as an array. For fan-out of per-connection state that cannot
+	//! be coalesced the way movement can — animation, which needs a separate command per
+	//! client and a separate readiness check against each one's resources.
+	GetClients()
+	{
+		return Array.from(this.clients.values());
+	}
 	//! Run every client's motion controllers and flush the movement updates they queued.
 	//! Deliberately separate from UpdateStreaming: that pass diffs and sends resources at
 	//! 1 Hz, this one moves nodes the client already has.

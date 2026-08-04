@@ -13,6 +13,7 @@ const WebRtcConnectionManager = require('../connections/webrtcconnectionmanager'
 const resources= require("../scene/resources.js");
 const nd= require("../scene/node.js");
 const movement_encoder= require("../protocol/encoders/movement_encoder.js");
+const animation_encoder= require("../protocol/encoders/animation_encoder.js");
 const { BackgroundMode } = require("../core/core.js");
 
 
@@ -761,6 +762,15 @@ class Client {
 		{
 			this.SendRemoveNodes(remove_nodes_uids);
 		}
+		// Animations first. A clip is useless until its node exists, but the node cannot be
+		// animated until its clip has arrived, and the clip is a URL the client still has to
+		// fetch over HTTPS. Getting it moving early shortens the wait before the avatar can
+		// do anything but stand still.
+		var animation_uids=this.geometryService.GetAnimationsToSend();
+		for (const uid of animation_uids)
+		{
+			this.SendAnimation(uid);
+		}
 		var mesh_uids=this.geometryService.GetMeshesToSend();
 		for (const uid of mesh_uids)
 		{
@@ -906,8 +916,7 @@ class Client {
 	SendNode(uid)
 	{
 		var node=this.scene.GetNode(uid);
-		const MAX_NODE_SIZE=500;
-		const buffer = new ArrayBuffer(MAX_NODE_SIZE);
+		const buffer = new ArrayBuffer(node.encodedSize());
 		// Convert the node's transform from the server's axes standard to this client's, exactly as
 		// the C++ server does in GeometryEncoder::encodeNodes (ConvertTransform server->client).
 		const nodeSize=node_encoder.encodeNode(node,buffer,this.scene.serverAxesStandard,this.clientAxesStandard);
@@ -1000,7 +1009,7 @@ class Client {
 			return;
 		}
 		const urlOverride=(this.avatarUrlOverrides&&this.avatarUrlOverrides.get(uid))||this.CubemapUrlForClient(resource);
-		const MAX_BUFFER_SIZE=resource.encodedSize();;
+		const MAX_BUFFER_SIZE=resource.encodedSize(urlOverride);
 		const buffer = new ArrayBuffer(MAX_BUFFER_SIZE);
 		const resourceSize=resource_encoder.EncodeResource(resource,buffer,urlOverride);
 		const view2 = new DataView(buffer, 0, resourceSize);
@@ -1024,6 +1033,48 @@ class Client {
 	SendMesh(uid)
 	{
 		this.SendGenericResource(uid);
+	}
+	SendAnimation(uid)
+	{
+		this.SendGenericResource(uid);
+	}
+	//! Tell the client what a node's skeleton should be playing, and when.
+	//!
+	//! opts: {timestampUs, animTimeAtTimestamp, speedUnitsPerSecond, loop, cacheID}.
+	//! timestampUs defaults to now; dating it slightly ahead is how a cross-fade is asked
+	//! for — the client blends from what is playing to the new state over the interval.
+	//!
+	//! Refuses to send until the client has acknowledged BOTH the node and the clip. An
+	//! ApplyAnimation naming either of them before they exist is dropped on arrival, and
+	//! nothing retries: the client has no way to ask for an animation state again.
+	//! Returns true if the command reached the wire.
+	SendApplyAnimation(nodeUid,animationUid,opts={})
+	{
+		if(!nodeUid||!animationUid)
+			return false;
+		const gs=this.geometryService;
+		if(!gs.WasNodeAcknowledged(BigInt(nodeUid))||!gs.WasNodeAcknowledged(BigInt(animationUid)))
+			return false;
+		const cmd=new command.ApplyAnimationCommand();
+		// Layer 0 is not a default so much as a requirement: the client's AnimationInstance
+		// only ever processes layer 0.
+		cmd.animLayer=0;
+		cmd.timestampUs=BigInt(Math.round(opts.timestampUs!==undefined?opts.timestampUs:core.getTimestampUs()));
+		cmd.nodeID=BigInt(nodeUid);
+		// Zero: "the cache containing nodeID". We cannot know the client's cache uids.
+		cmd.cacheID=opts.cacheID!==undefined?BigInt(opts.cacheID):BigInt(0);
+		cmd.animationID=BigInt(animationUid);
+		cmd.animTimeAtTimestamp=opts.animTimeAtTimestamp!==undefined?opts.animTimeAtTimestamp:0.0;
+		cmd.speedUnitsPerSecond=opts.speedUnitsPerSecond!==undefined?opts.speedUnitsPerSecond:1.0;
+		cmd.loop=opts.loop!==undefined?!!opts.loop:true;
+		const ok=this.SendCommandBytes(animation_encoder.buildApplyAnimation(cmd));
+		if(ok&&!this.loggedFirstAnimation)
+		{
+			this.loggedFirstAnimation=true;
+			console.log("Client "+this.clientID+": first animation applied (node "+cmd.nodeID
+				+", animation "+cmd.animationID+").");
+		}
+		return ok;
 	}
 	SendTexture(uid)
 	{

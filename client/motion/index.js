@@ -9,6 +9,8 @@
 const {NodeMotionController}= require('./node_motion_controller.js');
 const {FlatGround,CallbackGround}= require('./ground_provider.js');
 const {FollowCameraController}= require('./follow_camera_controller.js');
+const {FollowerAnimator,AnimState}= require('./follower_animator.js');
 const axes_basis= require('./axes_basis.js');
 
-module.exports= {NodeMotionController,FlatGround,CallbackGround,FollowCameraController,axes_basis};
+module.exports= {NodeMotionController,FlatGround,CallbackGround,FollowCameraController,
+	FollowerAnimator,AnimState,axes_basis};

@@ -542,6 +542,12 @@ function put_uint16(dataView, byteOffset, value) {
 	return byteOffset;
 }
 
+function put_int16(dataView, byteOffset, value) {
+	dataView.setInt16(byteOffset, value, endian);
+	byteOffset += 2;
+	return byteOffset;
+}
+
 function put_int32(dataView, byteOffset, value) {
 	dataView.setInt32(byteOffset, value, endian);
 	byteOffset += 4;
@@ -612,6 +618,6 @@ module.exports = {
 	, GeometryPayloadType, DisplayInfo, RenderingFeatures, LightingMode, VideoCodec
 	, VideoConfig, AudioConfig, ClientDynamicLighting, encodeToUint8Array, decodeFromUint8Array
 	, generateUid, getStartTimeUnixUs, getTimestampUs,
-	unixTimeToUTCString, put_float32, put_uint16, put_int32, put_uint32
+	unixTimeToUTCString, put_float32, put_uint16, put_int16, put_int32, put_uint32
 	, put_uint64, put_uint8, put_vec2, put_vec3, put_vec4, put_string
 };

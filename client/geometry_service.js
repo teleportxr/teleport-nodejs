@@ -332,30 +332,36 @@ class GeometryService {
 		}
 	}
 
-	AddNodeResources(node) {
-		/*for(var anim_uid of node.animations)
-		{
-			this.streamedAnimations[anim_uid]+=diff;
-		}*/
-		for (const material_uid of node.materials) {
-			var thisMaterial = geometryStore.getMaterial(material_uid);
-			if (!thisMaterial) {
-				continue;
-			}
-			this.StreamOrUnstream(this.streamedMaterials, material_uid, diff);
-
-			var texture_uids = [
-				thisMaterial.baseColorTexture.index,
-				thisMaterial.metallicRoughnessTexture.index,
-				thisMaterial.emissiveTexture.index,
-				thisMaterial.normalTexture.index,
-				thisMaterial.occlusionTexture.index,
-			];
-			for (const tex_uid of texture_uids) {
-				if (tex_uid != 0)
-					this.StreamOrUnstream(this.streamedTextures, tex_uid, diff);
-			}
+	//! Start streaming an animation clip to this client, refcounted like every other
+	//! resource: a clip wanted by two nodes is held until both let go.
+	//!
+	//! Animation is not derived from the node graph the way meshes and textures are. A clip
+	//! is chosen at runtime by whatever is driving the node — a state machine reacting to
+	//! speed, say — and the node payload deliberately does not list it (listing an animation
+	//! makes it block node completion on the client, delaying the avatar's appearance for no
+	//! gain). So the caller asks for clips explicitly.
+	StreamAnimation(uid) {
+		if (!uid) return;
+		this.StreamOrUnstream(this.streamedAnimations, uid, 1);
+		// Create the tracked record here rather than leaving it to the first
+		// GetAnimationsToSend, so that the client's acknowledgement is recorded whenever it
+		// arrives. EncodedResource and ConfirmResource both no-op on an untracked uid, which
+		// would otherwise make correctness depend on a streaming pass having run first.
+		const res = GeometryService.GetOrCreateTrackedResource(uid);
+		res.clientNeeds.set(clientIDToIndex.get(this.clientID), true);
+	}
+	//! Drop one reason for streaming a clip. The clip stays until the count reaches zero.
+	UnstreamAnimation(uid) {
+		if (!uid) return;
+		if (!this.streamedAnimations.has(uid)) return;
+		const count = this.streamedAnimations.get(uid) - 1;
+		if (count > 0) {
+			this.streamedAnimations.set(uid, count);
+			return;
 		}
+		this.streamedAnimations.delete(uid);
+		const res = GeometryService.trackedResources.get(uid);
+		if (res) res.clientNeeds.set(clientIDToIndex.get(this.clientID), false);
 	}
 	AddOrRemoveNodeAndResources(node_uid, diff) {
 		var already_present = false;
@@ -547,6 +553,18 @@ class GeometryService {
 		// transport actually accepts the buffer, not by the picker.
 		return this.GetResourcesToSend(this.streamedMeshes);
 	}
+	GetAnimationsToSend() {
+		return this.GetResourcesToSend(this.streamedAnimations);
+	}
+	//! Has this client confirmed it holds every one of these resources? Used to decide
+	//! whether an ApplyAnimation can be sent: naming a clip the client has not finished
+	//! fetching means the update is dropped, and the client has no mechanism to ask again.
+	WereResourcesAcknowledged(uids) {
+		for (const uid of uids) {
+			if (!this.WasNodeAcknowledged(uid)) return false;
+		}
+		return true;
+	}
 	EncodedResource(resource_uid) {
 		if (!GeometryService.trackedResources.has(resource_uid)) return;
 		var res = GeometryService.GetOrCreateTrackedResource(resource_uid);
@@ -577,7 +595,9 @@ class GeometryService {
 	//! never tracked.
 	WasNodeAcknowledged(resource_uid) {
 		const res = GeometryService.trackedResources.get(resource_uid);
-		return res ? res.WasAcknowledgedByClient(this.clientID) : false;
+		// The bitset yields 0/1; coerce, because this reads as a predicate everywhere it is
+		// used and callers should be able to compare it against a boolean.
+		return res ? !!res.WasAcknowledgedByClient(this.clientID) : false;
 	}
 	//! Has this node been put on the wire for this client? True from the moment we send
 	//! it, without waiting for the client to confirm.
@@ -592,7 +612,7 @@ class GeometryService {
 	//! traffic of moving a node the client has not been given yet.
 	WasNodeSent(resource_uid) {
 		const res = GeometryService.trackedResources.get(resource_uid);
-		return res ? res.WasSentToClient(this.clientID) : false;
+		return res ? !!res.WasSentToClient(this.clientID) : false;
 	}
 }
 

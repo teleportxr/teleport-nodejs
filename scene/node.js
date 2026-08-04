@@ -164,6 +164,16 @@ class Component {
 	}
 }
 
+//! Listing a clip in the node payload makes the client treat it as a resource that must
+//! arrive before the node can be completed, so the avatar does not appear until every clip
+//! has been fetched. Animation is driven by ApplyAnimation commands referring to clips
+//! streamed separately, so listing them buys nothing and costs the delay. Left false.
+let sendAnimationUidsInNode = false;
+
+function SetSendAnimationUidsInNode(enabled) {
+	sendAnimationUidsInNode = !!enabled;
+}
+
 class MeshComponent extends Component
 {
     constructor()
@@ -172,9 +182,22 @@ class MeshComponent extends Component
 		this.skeletonNodeID=0;
 		this.renderState = new RenderState();
 		this.meshUrl="";
+		//! int16 indices into the skeleton's bone list, for a skinned mesh.
+		this.joint_indices=[];
+		//! Animation clip uids. Not sent unless SetSendAnimationUidsInNode(true); see above.
+		this.animations=[];
+		//! Material resource uids.
+		this.materials=[];
     }
 	getType() {
 		return NodeDataType.Mesh;
+	}
+	encodedSize() {
+		// type(1) data uid(8) skeletonNodeID(8) three uint16 counts(6) lightmapScaleOffset(16)
+		// globalIlluminationUid(8)
+		const animations=sendAnimationUidsInNode?(this.animations||[]):[];
+		return 47 + (this.joint_indices||[]).length*2 + animations.length*8
+			+ (this.materials||[]).length*8;
 	}
 	encodeIntoDataView(dataView,byteOffset) {
 		byteOffset=core.put_uint8(dataView,byteOffset,NodeDataType.Mesh);
@@ -184,28 +207,30 @@ class MeshComponent extends Component
 
 		byteOffset=core.put_uint64(dataView,byteOffset,this.skeletonNodeID);
 
-		var num_joint_indices=0;
-		byteOffset=core.put_uint16(dataView,byteOffset,num_joint_indices);
-		for (var i =0;i<num_joint_indices;i++)
+		// Each of these three lists is written from its own contents. They were previously
+		// hard-coded to zero with the loop below left in place, so setting one on a component
+		// silently did nothing.
+		const joint_indices=this.joint_indices||[];
+		byteOffset=core.put_uint16(dataView,byteOffset,joint_indices.length);
+		for (var i =0;i<joint_indices.length;i++)
 		{
-			var index=this.joint_indices[i];
-			byteOffset=put_int16(dataView,byteOffset,index);
+			byteOffset=core.put_int16(dataView,byteOffset,joint_indices[i]);
 		}
 
-		var num_animations=0;
-		byteOffset=core.put_uint16(dataView,byteOffset,num_animations);
-		for (var i =0;i<num_animations;i++)
+		const animations=sendAnimationUidsInNode?(this.animations||[]):[];
+		byteOffset=core.put_uint16(dataView,byteOffset,animations.length);
+		for (var i =0;i<animations.length;i++)
 		{
-			byteOffset=core.put_uint64(dataView,byteOffset,this.animations[i]);
+			byteOffset=core.put_uint64(dataView,byteOffset,animations[i]);
 		}
 		// If the node's priority is less than the *client's* minimum, we don't want
 		// to send its mesh.
-		
-		var num_materials=0;
-		byteOffset=core.put_uint16(dataView,byteOffset,num_materials);
-		for (var i =0;i<num_materials;i++)
+
+		const materials=this.materials||[];
+		byteOffset=core.put_uint16(dataView,byteOffset,materials.length);
+		for (var i =0;i<materials.length;i++)
 		{
-			byteOffset=core.put_uint64(dataView,byteOffset,this.materials[i]);
+			byteOffset=core.put_uint64(dataView,byteOffset,materials[i]);
 		}
 		byteOffset=core.put_vec4(dataView,byteOffset,this.renderState.lightmapScaleOffset);
 		byteOffset=core.put_uint64(dataView,byteOffset,this.renderState.globalIlluminationUid);
@@ -277,6 +302,20 @@ class Node {
 	}
 	size() {
 		return Node.sizeof();
+	}
+	//! Buffer to allocate for encodeIntoDataView, including the 8-byte size prefix the
+	//! encoder writes. Computed rather than guessed: a mesh component's joint, animation and
+	//! material lists are variable-length, so a node with a skinned mesh can be far larger
+	//! than a plain one.
+	encodedSize() {
+		// size prefix(8) type(1) uid(8) name(2+n) pose stationary(1) holder(8) priority(4)
+		// parent(8) component count(1)
+		let sz = 8 + 1 + 8 + 2 + Buffer.byteLength(this.name || "", 'utf8')
+			+ Pose.size + 1 + 8 + 4 + 8 + 1;
+		for (const c of this.components) {
+			sz += (typeof c.encodedSize === 'function') ? c.encodedSize() : 256;
+		}
+		return sz;
 	}
 	setMeshComponent(mesh_url) {
 		resources.GetOrAddMesh(mesh_url);
@@ -405,4 +444,5 @@ class Node {
 };
 
 module.exports = {NodeDataType,Pose,PoseDynamic,NodePoseDynamic, Node, SoundComponent,
+	MeshComponent, SetSendAnimationUidsInNode,
 	POSE_PACKED_SIZE, POSE_DYNAMIC_PACKED_SIZE, NODE_POSE_SIZE };

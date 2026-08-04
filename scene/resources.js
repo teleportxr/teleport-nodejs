@@ -20,8 +20,20 @@ class Resource {
 		// served per-client in the variant matching the client's axes standard.
 		this.isCubemap = false;
 	}
-	encodedSize(){
-		return 500;
+	//! Buffer to allocate before encoding. Includes the 8-byte payload-size prefix that
+	//! resource_encoder.EncodeResource writes ahead of the body, as FontAtlas.encodedSize
+	//! does — the figure is a buffer size, not a body size.
+	//!
+	//! Body: uint8 type + uint64 uid + uint16 url length + the url's bytes. Sized from the
+	//! url actually about to be encoded, not a fixed figure: the default path root is
+	//! prepended to relative urls, and a long CDN root plus a long path will pass any guess.
+	//! Takes the same urlOverride as encodeIntoDataView so the two always agree.
+	encodedSize(urlOverride){
+		const url=urlOverride||this.url||"";
+		const root=(url.search("://")==-1)?Resource.defaultPathRoot:"";
+		// put_string writes one byte per UTF-16 code unit; the UTF-8 length is an upper
+		// bound on that, so allocating by it is always enough.
+		return 19+Buffer.byteLength(root+url,'utf8');
 	}
 	//! urlOverride, if supplied, replaces this.url for this encoding only (e.g. to send a
 	//! client-specific cubemap variant). The stored this.url is left untouched.
@@ -141,6 +153,84 @@ class TextCanvas extends Resource {
 	}
 }
 
+//! A server-authored skeletal animation, sent inline as keyframes (payload type 5).
+//!
+//! **Disabled, and must stay that way** — see `enableNativeAnimationPayload` below. It is
+//! kept because the byte layout is part of the protocol and worth having encoded and tested,
+//! and because a server that one day authors its own Skeleton payloads will need it. Today
+//! it cannot play:
+//!
+//!   * Keyframes are indexed by `int16` bone number against a Skeleton resource this server
+//!     never sends, so the client has nothing to resolve the indices against.
+//!   * Retargeting matches on joint *names*, which this format does not carry. An animation
+//!     built this way is never retargeted, and the client only ever plays retargeted clips.
+//!
+//! Use AnimationPointer instead: a URL to a `.vrma`/`.glb`, which does carry joint names.
+class Animation extends Resource {
+	constructor(uid, url) {
+		super(core.GeometryPayloadType.Animation, uid, url);
+		this.animationName = "";
+		//! Seconds. Note the C++ struct's "//Milliseconds" comments are wrong; the wire,
+		//! and ozz, use seconds throughout.
+		this.duration = 0.0;
+		//! [{boneIndex, positionKeyframes:[{time,value:{x,y,z}}], rotationKeyframes:[{time,value:{x,y,z,w}}]}]
+		this.boneKeyframes = [];
+	}
+	static getType() {
+		return core.GeometryPayloadType.Animation;
+	}
+	encodedSize() {
+		// 8-byte payload-size prefix, then: uint8 type + uint64 uid + uint16 name length
+		// + name + float duration + uint64 track count
+		let sz = 8 + 1 + 8 + 2 + Buffer.byteLength(this.animationName, 'utf8') + 4 + 8;
+		for (const track of this.boneKeyframes) {
+			// int16 boneIndex + uint64 position count + uint64 rotation count
+			sz += 2 + 8 + 8;
+			// Each position keyframe is float time + vec3; each rotation float time + vec4.
+			sz += track.positionKeyframes.length * 16;
+			sz += track.rotationKeyframes.length * 20;
+		}
+		return sz;
+	}
+	encodeIntoDataView(dataView, byteOffset) {
+		byteOffset = core.put_uint8(dataView, byteOffset, this.type);
+		byteOffset = core.put_uint64(dataView, byteOffset, this.uid);
+		byteOffset = core.put_string(dataView, byteOffset, this.animationName);
+		byteOffset = core.put_float32(dataView, byteOffset, this.duration);
+		byteOffset = core.put_uint64(dataView, byteOffset, this.boneKeyframes.length);
+		for (const track of this.boneKeyframes) {
+			byteOffset = core.put_int16(dataView, byteOffset, track.boneIndex);
+			byteOffset = core.put_uint64(dataView, byteOffset, track.positionKeyframes.length);
+			for (const k of track.positionKeyframes) {
+				byteOffset = core.put_float32(dataView, byteOffset, k.time);
+				byteOffset = core.put_vec3(dataView, byteOffset, k.value);
+			}
+			byteOffset = core.put_uint64(dataView, byteOffset, track.rotationKeyframes.length);
+			for (const k of track.rotationKeyframes) {
+				byteOffset = core.put_float32(dataView, byteOffset, k.time);
+				byteOffset = core.put_vec4(dataView, byteOffset, k.value);
+			}
+		}
+		return byteOffset;
+	}
+}
+
+//! Kill switch for the inline Animation payload above. Leave false.
+//!
+//! Beyond being unplayable, an inline clip is far larger than anything this server has ever
+//! put on a data channel: Idle.vrma is ~31 kB against a ceiling of a few hundred bytes for
+//! every payload sent to date, and WebRtcConnection.sendGeometry does no chunking. Measure
+//! before ever turning this on.
+let enableNativeAnimationPayload = false;
+
+function SetNativeAnimationPayloadEnabled(enabled) {
+	enableNativeAnimationPayload = !!enabled;
+}
+
+function IsNativeAnimationPayloadEnabled() {
+	return enableNativeAnimationPayload;
+}
+
 function AddTypedResource(typename, path) {
 	if (Resource.pathToUid.has(path)) {
 		throw new Error("Resource already exists at " + path);
@@ -243,6 +333,17 @@ function GetOrAddMesh(url) {
 	return GetOrAddResourceFromUrl(core.GeometryPayloadType.MeshPointer, url);
 }
 
+//! Get or add an animation clip url as a resource. The client fetches the url and decodes
+//! the body as an Animation, so it must end in an extension the client dispatches on:
+//! `.vrma`, `.glb`, `.vrm` (glTF binary) or `.gltf` (glTF text).
+//!
+//! One uid identifies one axes-converted variant of one clip, exactly as for meshes and
+//! textures. Serving two axes standards from a single uid is not possible; mint a separate
+//! resource per (clip, axes standard) if that is ever needed.
+function GetOrAddAnimationPointer(url) {
+	return GetOrAddResourceFromUrl(core.GeometryPayloadType.AnimationPointer, url);
+}
+
 function AddFontAtlas(path) {
 	const atlas_uid = AddTypedResource(FontAtlas, path);
 	return atlas_uid;
@@ -260,6 +361,10 @@ function AddTextCanvas(path, font_atlas, line_height, content) {
 module.exports = {
 	Resource,
 	FontAtlas,
+	Animation,
+	SetNativeAnimationPayloadEnabled,
+	IsNativeAnimationPayloadEnabled,
+	GetOrAddAnimationPointer,
 	GetResourceFromUrl,
 	GetResourceUidFromUrl,
 	GetOrAddResourceUidFromUrl,
