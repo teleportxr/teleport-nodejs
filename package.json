@@ -17,7 +17,7 @@
   },
   "name": "teleportxr",
   "description": "Teleport Spatial Server on node.js",
-  "version": "1.0.107",
+  "version": "1.0.108",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/teleportxr/teleport-nodejs.git"
