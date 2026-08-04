@@ -111,9 +111,17 @@ class FollowCameraController extends NodeMotionController
 		if(reason)
 			console.log("FollowCameraController ["+client.clientID+"]: idle — "+reason);
 		else if(this.debug)
+		{
+			// The head pose is the input to everything here, so a follower that is not
+			// following is nearly always a question about the pose rather than the filter.
+			const h=client.currentHeadPose;
+			const hp=h&&h.position?("("+h.position.x.toFixed(2)+", "+h.position.y.toFixed(2)+", "+h.position.z.toFixed(2)+")"):"none";
 			console.log("FollowCameraController ["+client.clientID+"]: node="+this.nodeUid
-				+" pos="+JSON.stringify(this.position)+" speed="+this.speed.toFixed(2)
+				+" head="+hp
+				+" pos=("+this.position.x.toFixed(2)+", "+this.position.y.toFixed(2)+", "+this.position.z.toFixed(2)+")"
+				+" speed="+this.speed.toFixed(2)
 				+" moving="+this.moving+" emitted="+this.emitted);
+		}
 	}
 
 	//! Where the follower should ultimately be, given a head pose. Exposed separately
