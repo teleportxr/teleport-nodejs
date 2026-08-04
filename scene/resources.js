@@ -24,6 +24,10 @@ class Resource {
 	//! resource_encoder.EncodeResource writes ahead of the body, as FontAtlas.encodedSize
 	//! does — the figure is a buffer size, not a body size.
 	//!
+	//! **This sizes a pointer body specifically.** Any subclass that overrides
+	//! encodeIntoDataView writes something other than a url and must override this as well;
+	//! inheriting it will under-allocate and fail at send time. See test_resource_encoded_size.js.
+	//!
 	//! Body: uint8 type + uint64 uid + uint16 url length + the url's bytes. Sized from the
 	//! url actually about to be encoded, not a fixed figure: the default path root is
 	//! prepended to relative urls, and a long CDN root plus a long path will pass any guess.
@@ -133,6 +137,14 @@ class TextCanvas extends Resource {
 	}
 	static getType() {
 		return core.GeometryPayloadType.TextCanvas;
+	}
+	//! Required, not optional: the base encodedSize sizes a *pointer* body (a url), and a
+	//! text canvas writes something else entirely. Any subclass that overrides
+	//! encodeIntoDataView must override this too.
+	encodedSize() {
+		// prefix(8) type(1) uid(8) fontAtlasUid(8) int32(4) lineHeight(4) colour(16)
+		// content length(2) + content
+		return 51 + Buffer.byteLength(this.content || "", 'utf8');
 	}
 	encodeIntoDataView(dataView, byteOffset) {
 		byteOffset = core.put_uint8(dataView, byteOffset, this.type);

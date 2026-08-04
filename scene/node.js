@@ -298,7 +298,9 @@ class Node {
 		this.soundComponents = [];
 	}
 	static sizeof() {
-		return 8 + 24 + Pose.size + 8;
+		// Pose.sizeof(), not Pose.size — the latter has never existed, so this silently
+		// returned NaN. Nothing allocated from it, which is why it went unnoticed.
+		return 8 + 24 + Pose.sizeof() + 8;
 	}
 	size() {
 		return Node.sizeof();
@@ -308,13 +310,18 @@ class Node {
 	//! material lists are variable-length, so a node with a skinned mesh can be far larger
 	//! than a plain one.
 	encodedSize() {
-		// size prefix(8) type(1) uid(8) name(2+n) pose stationary(1) holder(8) priority(4)
-		// parent(8) component count(1)
+		// size prefix(8) type(1) uid(8) name(2+n) pose(40) stationary(1) holder(8)
+		// priority(4) parent(8) component count(1)
 		let sz = 8 + 1 + 8 + 2 + Buffer.byteLength(this.name || "", 'utf8')
-			+ Pose.size + 1 + 8 + 4 + 8 + 1;
+			+ Pose.sizeof() + 1 + 8 + 4 + 8 + 1;
 		for (const c of this.components) {
-			sz += (typeof c.encodedSize === 'function') ? c.encodedSize() : 256;
+			// A component that cannot size itself gets a generous allowance rather than
+			// poisoning the total: an undersized buffer here is a hard failure at send time.
+			const componentSize = (typeof c.encodedSize === 'function') ? c.encodedSize() : 512;
+			sz += Number.isFinite(componentSize) ? componentSize : 512;
 		}
+		if (!Number.isFinite(sz))
+			throw new Error("Node.encodedSize computed a non-finite size for node " + this.uid);
 		return sz;
 	}
 	setMeshComponent(mesh_url) {

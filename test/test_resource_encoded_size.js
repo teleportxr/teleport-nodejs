@@ -60,6 +60,31 @@ test('encodedSize honours a urlOverride longer than the stored url', () => {
 	assert.ok(written <= size, `wrote ${written} bytes into a ${size}-byte buffer`);
 });
 
+test('every resource type sizes its own body, not the base class pointer body', () => {
+	// The base encodedSize sizes a url. A subclass that overrides encodeIntoDataView writes
+	// something else and must override encodedSize too — TextCanvas did not, and was covered
+	// only by the old fixed 500 until that was replaced. This walks the types the example
+	// server actually streams.
+	const atlasPath = '/test-atlas-' + Math.random().toString(36).slice(2) + '.ttf';
+	const canvasPath = '/test-canvas-' + Math.random().toString(36).slice(2);
+	resources.AddFontAtlas(atlasPath);
+	const canvasUid = resources.AddTextCanvas(canvasPath, atlasPath, 2.0,
+		'A line of canvas text long enough to exceed anything the pointer body would have allowed for.');
+
+	const canvas = resources.GetResourceFromUid(canvasUid);
+	const size = canvas.encodedSize();
+	const buffer = new ArrayBuffer(size);
+	const written = resource_encoder.EncodeResource(canvas, buffer);
+	assert.ok(written <= size, `TextCanvas wrote ${written} bytes into a ${size}-byte buffer`);
+
+	// Any subclass overriding the encoder must override the sizer; catching this by
+	// inspection is cheaper than catching it when a server falls over mid-session.
+	for (const type of [resources.FontAtlas, resources.Animation]) {
+		assert.notStrictEqual(type.prototype.encodedSize, resources.Resource.prototype.encodedSize,
+			`${type.name} overrides encodeIntoDataView, so it must override encodedSize`);
+	}
+});
+
 test('an AnimationPointer encodes as payload type 14 with a size prefix', () => {
 	const uid = resources.GetOrAddAnimationPointer('/avatar_anim/Running.vrma');
 	const res = resources.GetResourceFromUid(uid);
