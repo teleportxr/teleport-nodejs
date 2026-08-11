@@ -85,10 +85,10 @@ test('every resource type sizes its own body, not the base class pointer body', 
 	}
 });
 
-test('a pointer body ends with the axes standard of the asset it points at', () => {
-	// Appended after the url so that a client built before the field simply stops reading at
-	// the end of the url. NotInitialized means "the same as the server's scene", which is why
-	// only assets that disagree — anything glTF, against a Z-up server — need declaring.
+test('a pointer body begins with the axes standard of the asset it points at', () => {
+	// The byte sits ahead of the url, so it is always in the same place in the body.
+	// NotInitialized means "the same as the server's scene", which is why only assets that
+	// disagree — anything glTF, against a Z-up server — need declaring.
 	const uid = resources.GetOrAddMesh('/axes-test-' + Math.random().toString(36).slice(2) + '.vrm', 'gl');
 	const res = resources.GetResourceFromUid(uid);
 	assert.strictEqual(res.axesStandard, core.AxesStandard.GlStyle);
@@ -96,8 +96,8 @@ test('a pointer body ends with the axes standard of the asset it points at', () 
 	const buffer = new ArrayBuffer(res.encodedSize());
 	const written = resource_encoder.EncodeResource(res, buffer);
 	const dv = new DataView(buffer);
-	// Last byte of the body.
-	assert.strictEqual(dv.getUint8(written - 1), core.AxesStandard.GlStyle);
+	// First byte of the body after the size prefix, type and uid: 8 + 1 + 8 = offset 17.
+	assert.strictEqual(dv.getUint8(17), core.AxesStandard.GlStyle);
 	// And it is inside the declared payload size, not past it.
 	assert.strictEqual(Number(dv.getBigUint64(0, core.endian)), written - 8);
 });
@@ -106,21 +106,23 @@ test('an undeclared asset encodes NotInitialized, meaning "same as the server"',
 	const uid = resources.GetOrAddMesh('/undeclared-' + Math.random().toString(36).slice(2) + '.glb');
 	const res = resources.GetResourceFromUid(uid);
 	const buffer = new ArrayBuffer(res.encodedSize());
-	const written = resource_encoder.EncodeResource(res, buffer);
-	assert.strictEqual(new DataView(buffer).getUint8(written - 1), core.AxesStandard.NotInitialized);
+	resource_encoder.EncodeResource(res, buffer);
+	assert.strictEqual(new DataView(buffer).getUint8(17), core.AxesStandard.NotInitialized);
 	assert.strictEqual(core.AxesStandard.NotInitialized, 0);
 });
 
-test('a texture pointer carries no axes standard', () => {
-	// A texture has no geometric frame. Cubemap orientation is handled instead by serving a
-	// per-axes variant of the file, so adding a field here would be meaningless.
+test('a texture pointer carries a placeholder axes-standard byte', () => {
+	// A texture has no geometric frame, so the byte at the front of its body stays
+	// NotInitialized — a placeholder for future texture interpretation, not a statement
+	// about the asset. Cubemap orientation is handled by serving a per-axes variant instead.
 	const uid = resources.GetOrAddTexture('/tex-' + Math.random().toString(36).slice(2) + '.ktx2');
 	const res = resources.GetResourceFromUid(uid);
 	assert.strictEqual(res.carriesAxesStandard(), false);
 	const buffer = new ArrayBuffer(res.encodedSize());
 	const written = resource_encoder.EncodeResource(res, buffer);
-	// The body ends with the url's last character, not an axes byte.
 	const dv = new DataView(buffer);
+	assert.strictEqual(dv.getUint8(17), core.AxesStandard.NotInitialized);
+	// The body still ends with the url's last character.
 	assert.strictEqual(dv.getUint8(written - 1), '2'.charCodeAt(0));
 });
 

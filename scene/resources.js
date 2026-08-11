@@ -36,7 +36,8 @@ class Resource {
 	//! encodeIntoDataView writes something other than a url and must override this as well;
 	//! inheriting it will under-allocate and fail at send time. See test_resource_encoded_size.js.
 	//!
-	//! Body: uint8 type + uint64 uid + uint16 url length + the url's bytes. Sized from the
+	//! Body: uint8 type + uint64 uid + uint8 axes standard + uint16 url length + the url's
+	//! bytes. Sized from the url actually about to be encoded, not a fixed figure: the
 	//! url actually about to be encoded, not a fixed figure: the default path root is
 	//! prepended to relative urls, and a long CDN root plus a long path will pass any guess.
 	//! Takes the same urlOverride as encodeIntoDataView so the two always agree.
@@ -44,13 +45,13 @@ class Resource {
 		const url=urlOverride||this.url||"";
 		const root=(url.search("://")==-1)?Resource.defaultPathRoot:"";
 		// put_string writes one byte per UTF-16 code unit; the UTF-8 length is an upper
-		// bound on that, so allocating by it is always enough. The +1 is the trailing
-		// axes-standard byte.
+		// bound on that, so allocating by it is always enough.
 		return 20+Buffer.byteLength(root+url,'utf8');
 	}
-	//! Does this pointer type carry an axes standard? Only the ones whose asset has a
-	//! geometric frame: a texture does not, and a cubemap's orientation is handled instead by
-	//! serving a per-axes variant of the file (see GetOrAddCubemap).
+	//! Does this pointer type carry a meaningful axes standard? Only the ones whose asset
+	//! has a geometric frame: a texture does not (its byte is a placeholder for future
+	//! texture interpretation), and a cubemap's orientation is handled instead by serving
+	//! a per-axes variant of the file (see GetOrAddCubemap).
 	carriesAxesStandard() {
 		return this.type == core.GeometryPayloadType.MeshPointer
 			|| this.type == core.GeometryPayloadType.AnimationPointer;
@@ -60,14 +61,15 @@ class Resource {
 	encodeIntoDataView(dataView, byteOffset, urlOverride) {
 		byteOffset = core.put_uint8(dataView, byteOffset, this.type);
 		byteOffset = core.put_uint64(dataView, byteOffset, this.uid);
+		// Every pointer body begins with an axes-standard byte, ahead of the url, so it is
+		// always in the same place. For pointer types that don't carry one (see
+		// carriesAxesStandard) this stays NotInitialized — a placeholder, not a statement
+		// about the asset.
+		byteOffset = core.put_uint8(dataView, byteOffset, this.axesStandard);
 		var url = urlOverride || this.url;
 		if (url.search("://") == -1)
 			url = Resource.defaultPathRoot + url;
 		byteOffset = core.put_string(dataView, byteOffset, url);
-		// Appended after the url, so a client built before this field existed simply stops
-		// reading at the end of the url and is unaffected.
-		if (this.carriesAxesStandard())
-			byteOffset = core.put_uint8(dataView, byteOffset, this.axesStandard);
 		return byteOffset;
 	}
 }
