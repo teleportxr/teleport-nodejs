@@ -112,6 +112,77 @@ class FollowerAnimator
 		//! client must be asked exactly once.
 		this.streamedFor=new Set();
 		this.emitted=0;
+
+		//! Diagnostics, mirroring FollowCameraController's. An animator that has never emitted
+		//! reports why, every reportEveryUs, because every reason for its silence — no node, node
+		//! not acknowledged, clip not acknowledged, clip still settling — presents identically:
+		//! an avatar that moves and never animates. Once it has emitted it goes quiet unless
+		//! debug is on.
+		this.debug=opts.debug!==undefined?opts.debug
+			:(process.env.TELEPORT_FOLLOWER_DEBUG==='1'||process.env.TELEPORT_FOLLOWER_DEBUG==='true');
+		this.reportEveryUs=opts.reportEveryUs!==undefined?opts.reportEveryUs:5000000;
+		this.lastReportUs=0;
+	}
+
+	//! Why is nothing being animated? Returns a human-readable reason, or null if the animator
+	//! is working. Ordered to match the sequence Update() and Emit() go through.
+	Diagnose(client,nowUs)
+	{
+		if(!this.enabled)
+			return "disabled (TELEPORT_FOLLOWER_ANIMATION=0)";
+		if(this.nodeRole&&!this.nodeUid)
+		{
+			const registry=client.clientManager?client.clientManager.clientNodes:null;
+			if(!registry)
+				return "no client node registry, so role '"+this.nodeRole+"' cannot be resolved";
+			return "no node with role '"+this.nodeRole+"' for this client yet"
+				+" (an avatar is only registered once the client accepts the avatar policy)";
+		}
+		if(!this.nodeUid)
+			return "no node to animate";
+		const gs=client.geometryService;
+		if(!gs)
+			return "client has no geometry service";
+		// Animation waits for acknowledgement where movement only waits for "sent", so a client
+		// whose ack back-channel is broken moves the avatar and never animates it, indefinitely.
+		if(!gs.WasNodeAcknowledged(this.nodeUid))
+			return "node "+this.nodeUid+" has not been acknowledged by the client"
+				+" (movement only needs it sent, animation needs it acknowledged)";
+		const clip=this.clips[this.state];
+		if(!clip)
+			return "no clip configured for state '"+this.state+"'";
+		if(clip.uid===null)
+			return "clip "+clip.url+" has not been resolved to a resource uid yet";
+		if(!gs.WasNodeAcknowledged(clip.uid))
+			return "clip "+clip.url+" (uid "+clip.uid+") has not been acknowledged by the client";
+		const key=String(clip.uid);
+		if(this.clipReadyUs.has(key)&&nowUs-this.clipReadyUs.get(key)<this.settleUs)
+			return "clip "+clip.url+" is settling"
+				+" ("+((this.settleUs-(nowUs-this.clipReadyUs.get(key)))/1000000.0).toFixed(1)+"s left)";
+		return null;
+	}
+
+	Report(client,nowUs)
+	{
+		if(this.emitted&&!this.debug)
+			return;
+		if(nowUs-this.lastReportUs<this.reportEveryUs)
+			return;
+		this.lastReportUs=nowUs;
+		const reason=this.Diagnose(client,nowUs);
+		if(reason)
+			console.log("FollowerAnimator ["+client.clientID+"]: not animating — "+reason);
+		else if(this.debug)
+		{
+			const clip=this.clips[this.state];
+			console.log("FollowerAnimator ["+client.clientID+"]: node="+this.nodeUid
+				+" state="+this.state
+				+" clip="+(clip?clip.uid:"none")
+				+" speed="+this.smoothedSpeed.toFixed(2)
+				+" rate="+this.rate.toFixed(2)
+				+" phase="+this.phase.toFixed(2)
+				+" informed="+this.informed.has(client.clientID)+" emitted="+this.emitted);
+		}
 	}
 
 	//! Resolve the clip urls to resource uids, and ask each client for the clips once.
@@ -257,7 +328,10 @@ class FollowerAnimator
 
 		const uid=this.ResolveNodeUid(client);
 		if(!uid)
+		{
+			this.Report(client,nowUs);
 			return;
+		}
 
 		// Advance the phase by however much of the clip played since the last tick, so that a
 		// change of clip can pick up where the last one left off.
@@ -280,6 +354,7 @@ class FollowerAnimator
 		this.rate=this.RateFor(this.state,this.smoothedSpeed);
 
 		this.Emit(clients,nowUs);
+		this.Report(client,nowUs);
 	}
 
 	//! Send the current state to every client that can see this node and has not been told.

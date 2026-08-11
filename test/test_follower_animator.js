@@ -305,3 +305,58 @@ test('fan-out reaches peers, each gated on its own resources', () => {
 	run(animator, owner, 0.0, 1.0, 1000000);
 	assert.ok(peer.sent.length >= 1, 'peer should be told once it has the node');
 });
+
+// Diagnostics. A follower that moves but never animates is the failure this whole class of
+// bug presents as, and every cause of it looks identical from the outside. Diagnose names it.
+
+test('Diagnose returns null when the animator is working', () => {
+	const animator = makeAnimator();
+	const client = makeStubClient();
+	run(animator, client, 0.0, 1.0, 0);
+	assert.strictEqual(animator.Diagnose(client, 1000000), null);
+});
+
+test('Diagnose names an unacknowledged node, the case movement does not share', () => {
+	// Movement only needs the node sent; animation needs it acknowledged. A client whose ack
+	// back-channel is broken therefore moves the avatar and never animates it.
+	const animator = makeAnimator();
+	const client = makeStubClient({ acknowledged: false });
+	run(animator, client, 1.0, 1.0, 0);
+	const reason = animator.Diagnose(client, 1000000);
+	assert.match(reason, /has not been acknowledged/);
+});
+
+test('Diagnose names a disabled animator', () => {
+	const animator = makeAnimator({ enabled: false });
+	assert.match(animator.Diagnose(makeStubClient(), 0), /disabled/);
+});
+
+test('Diagnose names a clip that is still settling', () => {
+	const animator = makeAnimator({ settleUs: 2000000 });
+	const client = makeStubClient();
+	// One tick is enough to record when the clip was first seen acknowledged.
+	animator.Update(0.0, 0, client);
+	assert.match(animator.Diagnose(client, TICK_US), /settling/);
+	assert.strictEqual(animator.Diagnose(client, 3000000), null);
+});
+
+test('Report goes quiet once the animator has emitted, unless debug is on', () => {
+	const lines = [];
+	const log = console.log;
+	console.log = (s) => lines.push(s);
+	try {
+		const animator = makeAnimator({ reportEveryUs: 0 });
+		const client = makeStubClient({ acknowledged: false });
+		run(animator, client, 1.0, 1.0, 0);
+		assert.ok(lines.length > 0, 'a silent animator should say why');
+		assert.ok(lines.every((l) => l.includes('FollowerAnimator')));
+
+		client.acknowledged = true;
+		lines.length = 0;
+		run(animator, client, 1.0, 1.0, 1000000);
+		assert.ok(animator.emitted > 0, 'should have emitted by now');
+		assert.strictEqual(lines.length, 0, 'a working animator should be silent');
+	} finally {
+		console.log = log;
+	}
+});

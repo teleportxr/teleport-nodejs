@@ -342,7 +342,7 @@ const GeometryPayloadType =
 	MaterialPointer: 12,
 	RemoveNodes: 13,
 	//! URL of an out-of-band Animation, same body layout as MeshPointer. The client fetches
-	//! the URL and decodes the body as an Animation. Not yet emitted by this server.
+	//! the URL and decodes the body as an Animation.
 	AnimationPointer: 14,
 };
 
