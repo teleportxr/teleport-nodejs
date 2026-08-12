@@ -8,6 +8,8 @@
 // well-typed object. Unknown keys on incoming objects are preserved so
 // future protocol fields survive a parse+emit cycle.
 
+const receipts = require('../manifest/receipt.js');
+
 const TELEPORT_SIGNAL_TYPE_AVATAR_POLICY        = 'avatar-policy';
 const TELEPORT_SIGNAL_TYPE_AVATAR_OFFER         = 'avatar-offer';
 const TELEPORT_SIGNAL_TYPE_AVATAR_RESULT        = 'avatar-result';
@@ -101,6 +103,29 @@ function parseAvatarPolicy(j) {
 
 // AvatarOffer ----------------------------------------------------------
 
+// A manifest address offered in place of a direct asset url. Either an
+// absolute https `url` or a `umid` to be resolved against the resolver
+// named in the policy; `pointer` optionally names which pointer in the
+// manifest holds the avatar. See Teleport/docs/protocol/avatar_manifest.rst.
+function parseAvatarManifestOffer(j) {
+	if (!j || typeof j !== 'object' || Array.isArray(j)) return undefined;
+	const m = {};
+	if (j.url     != null) m.url     = String(j.url);
+	if (j.umid    != null) m.umid    = String(j.umid);
+	if (j.pointer != null) m.pointer = String(j.pointer);
+	// An address with neither form is not an offer of anything.
+	return (m.url || m.umid) ? m : undefined;
+}
+
+function encodeAvatarManifestOffer(m) {
+	if (!m || typeof m !== 'object') return undefined;
+	const j = {};
+	if (m.url     != null) j.url     = String(m.url);
+	if (m.umid    != null) j.umid    = String(m.umid);
+	if (m.pointer != null) j.pointer = String(m.pointer);
+	return (j.url || j.umid) ? j : undefined;
+}
+
 function parseAvatarOffer(j) {
 	const o = { policy_id: 0n, have_avatar: false };
 	if (!j || typeof j !== 'object') return o;
@@ -108,6 +133,8 @@ function parseAvatarOffer(j) {
 	if (j.have_avatar != null) o.have_avatar = !!j.have_avatar;
 	if (j.url          != null) o.url          = String(j.url);
 	if (j.content_hash != null) o.content_hash = String(j.content_hash);
+	const manifest = parseAvatarManifestOffer(j.manifest);
+	if (manifest) o.manifest = manifest;
 	if (j.declared && typeof j.declared === 'object') {
 		o.declared = {
 			format: j.declared.format ? String(j.declared.format) : '',
@@ -129,6 +156,8 @@ function encodeAvatarOffer(o) {
 	const j = { policy_id: Number(o.policy_id || 0n), have_avatar: !!o.have_avatar };
 	if (o.url          != null) j.url          = String(o.url);
 	if (o.content_hash != null) j.content_hash = String(o.content_hash);
+	const manifest = encodeAvatarManifestOffer(o.manifest);
+	if (manifest) j.manifest = manifest;
 	if (o.declared) j.declared = Object.assign({}, o.declared);
 	if (o.proof)    j.proof    = Object.assign({}, o.proof);
 	if (o.allow_relay != null) j.allow_relay = !!o.allow_relay;
@@ -138,7 +167,7 @@ function encodeAvatarOffer(o) {
 // AvatarResult / Revoke -------------------------------------------------
 
 function encodeAvatarResult(r) {
-	return {
+	const j = {
 		policy_id:     Number(r.policy_id || 0n),
 		status:        r.status || 'rejected',           // accepted | rejected | pending
 		node_uid:      Number(r.node_uid || 0n),
@@ -149,6 +178,13 @@ function encodeAvatarResult(r) {
 		delivery:      r.delivery || 'relay',
 		reasons:       Array.isArray(r.reasons) ? r.reasons.slice() : []
 	};
+	// The Universal Manifest receipt, present only when a manifest was
+	// evaluated. A conformant evaluator owes the subject an honest record
+	// of what it did with their document, including the facets it chose
+	// not to read (Teleport/docs/protocol/avatar_manifest.rst).
+	const manifest = receipts.parseWire(r.manifest);
+	if (manifest) j.manifest = manifest;
+	return j;
 }
 
 function encodeAvatarRevoke(r) {
@@ -180,6 +216,7 @@ module.exports = {
 	CAPABILITY_IDENTITY_CHALLENGE,
 	AvatarPolicy, parseAvatarPolicy,
 	parseAvatarOffer, encodeAvatarOffer,
+	parseAvatarManifestOffer, encodeAvatarManifestOffer,
 	encodeAvatarResult, encodeAvatarRevoke,
 	RELAYABLE_EXTENSIONS, isRelayableUrl,
 };

@@ -12,6 +12,7 @@
 // from the signaling layer.
 
 const avatars = require('../protocol/avatars.js');
+const receipts = require('../manifest/receipt.js');
 const { redactUrl } = require('../utils/redact.js');
 
 // Threshold above which a 'pending' frame is sent so the client can
@@ -30,6 +31,7 @@ class AvatarService {
 		this.currentPolicy	= null;
 		this.lastOffer		= null;
 		this.lastResult		= null;
+		this.lastManifestReceipt = null;
 		// Optional IAvatarValidator. When null the service keeps its
 		// Phase-2 behaviour: any offer is answered with using_default.
 		this.validator		= (opts && opts.validator) || null;
@@ -37,6 +39,16 @@ class AvatarService {
 		// default fallbacks produce a real scene node whose uid is
 		// reported in avatar-result.node_uid.
 		this.importer		= (opts && opts.importer) || null;
+		// Optional IAvatarManifestResolver. When set, an offer carrying a
+		// manifest address is resolved to an asset url before validation.
+		// When null, manifest offers are ignored — which is the right
+		// behaviour for a deployment that has not opted in, since it has
+		// not told the client it accepts them either.
+		this.manifestResolver = (opts && opts.manifestResolver) || null;
+		// Optional host callback, invoked with the app-specific facets a
+		// resolved manifest carried:
+		//   onManifestProjected(clientID, projection, receipt)
+		this.onManifestProjected = (opts && opts.onManifestProjected) || null;
 		// Server-wide relay switch. Relay is the default delivery mode
 		// (plans/avatars_plan.md §2.1); set false for deployments where
 		// an avatar url must never reach other clients.
@@ -67,12 +79,19 @@ class AvatarService {
 	async handleOffer(offerJson) {
 		const offer = avatars.parseAvatarOffer(offerJson);
 		this.lastOffer = offer;
-		// The URL may carry a bearer token; only ever log it redacted
-		// (plans/avatars_plan.md §8).
+		// Any receipt from this offer's manifest evaluation; attached to
+		// whichever avatar-result we end up sending. Cleared per offer so
+		// a later offer never inherits an earlier one's receipt.
+		this.lastManifestReceipt = null;
+		// A url or manifest address may carry a bearer token; only ever
+		// log either redacted (plans/avatars_plan.md §8).
+		const offeredAddress = offer.have_avatar
+			? (offer.manifest ? (offer.manifest.url || offer.manifest.umid) : offer.url)
+			: '';
 		console.log('avatar-offer  ← client ' + this.clientID +
 			' policy_id=' + offer.policy_id +
 			' have_avatar=' + offer.have_avatar +
-			(offer.have_avatar && offer.url ? ' url=' + redactUrl(offer.url) : ''));
+			(offeredAddress ? (offer.manifest ? ' manifest=' : ' url=') + redactUrl(offeredAddress) : ''));
 
 		if (!this.currentPolicy ||
 			BigInt(offer.policy_id || 0n) !== BigInt(this.currentPolicy.policy_id))
@@ -86,6 +105,19 @@ class AvatarService {
 				reasons:		['policy_unknown'],
 			});
 			return;
+		}
+
+		// A manifest address is an indirection in front of an asset url:
+		// resolve it, and everything downstream proceeds as if the client
+		// had offered the resolved url directly.
+		//
+		// Gated on having a validator as well as a resolver, because
+		// without one the offer would fall back to the default avatar
+		// anyway and the manifest fetch would be a network round trip
+		// spent on a result we would discard.
+		if (offer.have_avatar && offer.manifest && this.manifestResolver && this.validator) {
+			const resolved = await this._resolveManifest(offer);
+			if (!resolved) return;
 		}
 
 		// Without a validator, or without an offered URL, fall straight
@@ -145,6 +177,52 @@ class AvatarService {
 			this._replyDefaultOrReject(offer.policy_id, result.reasons || ['validation_failed']);
 		}
 		void pendingSent;
+	}
+
+	// Resolve offer.manifest to an asset url, writing it into offer.url so
+	// the rest of handleOffer is unaware a manifest was involved.
+	//
+	// Returns true to continue, false when it has already replied. A
+	// manifest that fails to resolve is not a protocol error: the client
+	// offered something the server could not use, which is the same
+	// situation as a bad url, and it falls back to the default avatar
+	// exactly as that does.
+	async _resolveManifest(offer) {
+		const requirements = (this.currentPolicy.requirements || {}).manifest || {};
+		let resolved;
+		try {
+			resolved = await this.manifestResolver.resolve(offer.manifest, requirements);
+		} catch (err) {
+			resolved = { ok: false, reasons: ['manifest_unresolvable'], receipt: null };
+		}
+
+		this.lastManifestReceipt = resolved.receipt || null;
+
+		if (!resolved.ok) {
+			this._replyDefaultOrReject(offer.policy_id, resolved.reasons || ['manifest_unresolvable']);
+			return false;
+		}
+
+		console.log('avatar manifest for client ' + this.clientID +
+			': resolved ' + redactUrl(resolved.manifestUrl) +
+			' → ' + redactUrl(resolved.avatarUrl) +
+			' (outcome ' + (resolved.receipt ? resolved.receipt.outcome : 'unknown') + ')');
+
+		offer.url = resolved.avatarUrl;
+		// The manifest said nothing about the asset's byte size or
+		// triangle count, so any `declared` block the client sent still
+		// stands and the validator measures the asset regardless.
+
+		if (typeof this.onManifestProjected === 'function') {
+			try {
+				this.onManifestProjected(this.clientID, resolved.projection, resolved.receipt);
+			} catch (err) {
+				// A host callback must never be able to fail a client's
+				// avatar; the manifest itself was fine.
+				console.log('avatar manifest projection callback threw for client ' + this.clientID + ': ' + err.message);
+			}
+		}
+		return true;
 	}
 
 	// Turn a successful validation into a scene node and an avatar-result.
@@ -272,11 +350,16 @@ class AvatarService {
 		// policy in force and a new offer is expected next.
 		this.lastOffer = null;
 		this.lastResult = null;
+		this.lastManifestReceipt = null;
 		if (this.importer)
 			this.importer.removeForClient(this.clientID);
 	}
 
 	_reply(result, record = true) {
+		// Carry the manifest receipt on whichever result this offer
+		// produced, unless the caller supplied one explicitly.
+		if (result.manifest === undefined && this.lastManifestReceipt)
+			result = Object.assign({}, result, { manifest: receipts.toWire(this.lastManifestReceipt) });
 		const content = avatars.encodeAvatarResult(result);
 		if (record) this.lastResult = content;
 		console.log('avatar-result → client ' + this.clientID +

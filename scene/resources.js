@@ -16,9 +16,6 @@ class Resource {
 		this.uid = uid;
 		this.url = url;
 		this.type = type;
-		// True for environment cubemaps (background/diffuse/specular). Such resources are
-		// served per-client in the variant matching the client's axes standard.
-		this.isCubemap = false;
 		//! The axes standard the asset behind this url is authored in, for pointer types.
 		//!
 		//! NotInitialized means "the same as the server's scene", which is the common case and
@@ -26,6 +23,10 @@ class Resource {
 		//! that disagree with the server: a glTF-family file (.glb/.vrm/.vrma) is always Y-up
 		//! right-handed (GlStyle) regardless of what the scene around it uses, and the client
 		//! applies a real conversion from this standard to its own.
+		//!
+		//! Textures carry it too, and for cubemaps it matters: unlike geometry, texture
+		//! *contents* are never converted here, so the client reorients its sample directions
+		//! from this standard. Environment cubemaps declared in scene.json default to GlStyle.
 		this.axesStandard = core.AxesStandard.NotInitialized;
 	}
 	//! Buffer to allocate before encoding. Includes the 8-byte payload-size prefix that
@@ -48,23 +49,25 @@ class Resource {
 		// bound on that, so allocating by it is always enough.
 		return 20+Buffer.byteLength(root+url,'utf8');
 	}
-	//! Does this pointer type carry a meaningful axes standard? Only the ones whose asset
-	//! has a geometric frame: a texture does not (its byte is a placeholder for future
-	//! texture interpretation), and a cubemap's orientation is handled instead by serving
-	//! a per-axes variant of the file (see GetOrAddCubemap).
+	//! Does this pointer type carry a meaningful axes standard? Meshes and animations, whose
+	//! asset has a geometric frame; and textures, because a cubemap's faces are laid out in
+	//! one — the client reorients its sample directions rather than the server reprojecting
+	//! the file. Materials do not.
 	carriesAxesStandard() {
 		return this.type == core.GeometryPayloadType.MeshPointer
-			|| this.type == core.GeometryPayloadType.AnimationPointer;
+			|| this.type == core.GeometryPayloadType.AnimationPointer
+			|| this.type == core.GeometryPayloadType.TexturePointer;
 	}
 	//! urlOverride, if supplied, replaces this.url for this encoding only (e.g. to send a
-	//! client-specific cubemap variant). The stored this.url is left untouched.
+	//! client-specific avatar). The stored this.url is left untouched.
 	encodeIntoDataView(dataView, byteOffset, urlOverride) {
 		byteOffset = core.put_uint8(dataView, byteOffset, this.type);
 		byteOffset = core.put_uint64(dataView, byteOffset, this.uid);
 		// Every pointer body begins with an axes-standard byte, ahead of the url, so it is
 		// always in the same place. For pointer types that don't carry one (see
 		// carriesAxesStandard) this stays NotInitialized — a placeholder, not a statement
-		// about the asset.
+		// about the asset. NotInitialized also means "same as the server's scene" for the
+		// types that do carry one, which is what the client falls back to.
 		byteOffset = core.put_uint8(dataView, byteOffset, this.axesStandard);
 		var url = urlOverride || this.url;
 		if (url.search("://") == -1)
