@@ -224,6 +224,17 @@ class Client {
 	{
 		this.RearmAckedState(this.currentOriginState,"origin");
 		this.RearmAckedState(this.currentLightingState,"lighting");
+		// The geometry cache goes the same way as the session commands when the stream drops, so
+		// it has to be re-armed on the same event. Without this a WebRTC-only reconnect — one the
+		// signalling connection survives, so this Client is reused — leaves every node marked sent
+		// and acknowledged, and nothing is ever re-streamed: the avatar stops following and its
+		// animation is never repeated.
+		if(this.geometryService)
+		{
+			const rearmed=gs.GeometryService.RearmClient(this.clientID);
+			if(rearmed)
+				console.log("Client "+this.clientID+": re-arming "+rearmed+" geometry resource(s) after (re)connection.");
+		}
 	}
 	RearmAckedState(st,what)
 	{

@@ -211,7 +211,19 @@ class FollowCameraController extends NodeMotionController
 			this.moving=true;
 		}
 
-		let yawError=ax.WrapAngle(target.yaw-this.yaw);
+		// Which way the body should point. In 'velocity' mode that is the way it is about to
+		// travel — the step is along toTarget, so the direction is known before we take it —
+		// and it falls back to the camera-derived yaw whenever the follower is not moving,
+		// which is what settles it back to 'away' as it parks.
+		let desiredYaw=target.yaw;
+		if(this.facing==='velocity'&&this.moving)
+		{
+			const travel=ax.Horizontal(toTarget,basis.up);
+			if(ax.length(travel)>1e-6)
+				desiredYaw=ax.SignedAngleAbout(basis.forward,ax.normalise(travel),basis.up);
+		}
+
+		let yawError=ax.WrapAngle(desiredYaw-this.yaw);
 		const yawDeadZoneRad=this.yawDeadZone*Math.PI/180.0;
 		const turning=Math.abs(yawError)>yawDeadZoneRad;
 
@@ -252,13 +264,6 @@ class FollowCameraController extends NodeMotionController
 		const horizontalMoved=ax.length(ax.Horizontal(
 			ax.scale(ax.normalise(toTarget),moved),basis.up));
 		this.speed=dtSeconds>0?horizontalMoved/dtSeconds:0.0;
-
-		if(this.facing==='velocity'&&this.moving&&moved>1e-6)
-		{
-			const travelDir=ax.normalise(ax.Horizontal(toTarget,basis.up));
-			if(ax.length(travelDir)>1e-6)
-				this.yaw=ax.SignedAngleAbout(basis.forward,travelDir,basis.up);
-		}
 
 		this.Apply(client,node,basis,false);
 		if(this.animator)

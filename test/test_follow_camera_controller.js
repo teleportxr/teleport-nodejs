@@ -272,3 +272,57 @@ test('writes the pose back to the scene node, so a late peer sees it in place', 
 	assert.ok(Math.abs(c.node.pose.position.x - 3) < 1e-6);
 	assert.ok(Math.abs(c.node.pose.position.y - 6) < 1e-6);
 });
+
+// Facing the direction of travel. A walk cycle only reads correctly when the body points the
+// way its feet are going; facing 'away' while the follower sidesteps renders as a moonwalk.
+
+test('velocity facing turns the follower towards where it is travelling', () => {
+	const c = makeStubClient();		// EngineeringStyle: +Y forward, +Z up
+	const f = new FollowCameraController({ nodeUid: NODE_UID, facing: 'velocity', tau: 0.05 });
+
+	// Settle in front of a camera at the origin, then move the camera sideways so the
+	// follower's target — and therefore its travel — is off to one side rather than ahead.
+	c.currentHeadPose = headAt(0, 0, 0);
+	settle(f, c);
+	const parkedYaw = f.yaw;
+
+	c.currentHeadPose = headAt(10, 0, 0);
+	settle(f, c, 40);
+
+	assert.notStrictEqual(f.yaw, parkedYaw,
+		'the follower should have turned to face its direction of travel');
+});
+
+test('velocity facing settles back to the camera-derived yaw once parked', () => {
+	const c = makeStubClient();
+	const f = new FollowCameraController({ nodeUid: NODE_UID, facing: 'velocity', tau: 0.05 });
+	const away = new FollowCameraController({ nodeUid: NODE_UID, facing: 'away' });
+
+	c.currentHeadPose = headAt(0, 0, 0);
+	settle(f, c);
+	// Move, then hold still long enough for the follower to catch up and park.
+	c.currentHeadPose = headAt(6, 0, 0);
+	settle(f, c, 600);
+
+	const basis = ax.BasisFor(c.scene.serverAxesStandard);
+	const expected = away.ComputeTarget(c.currentHeadPose, basis).yaw;
+	assert.ok(Math.abs(ax.WrapAngle(f.yaw - expected)) < 0.2,
+		'a parked follower has no direction of travel, so it should return to facing away');
+});
+
+test('velocity facing is rate-limited, not snapped', () => {
+	// The turn must go through the same maxTurnRate clamp as every other facing mode, or a
+	// sharp change of direction spins the avatar between one frame and the next.
+	const c = makeStubClient();
+	const f = new FollowCameraController({
+		nodeUid: NODE_UID, facing: 'velocity', tau: 0.05, maxTurnRate: 0.1,
+	});
+	c.currentHeadPose = headAt(0, 0, 0);
+	settle(f, c);
+
+	const before = f.yaw;
+	c.currentHeadPose = headAt(10, 0, 0);
+	f.update(0.05, c, 1e6);
+	assert.ok(Math.abs(ax.WrapAngle(f.yaw - before)) <= 0.1 * 0.05 + 1e-6,
+		'one tick must not turn further than maxTurnRate allows');
+});

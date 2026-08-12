@@ -145,6 +145,31 @@ class GeometryService {
 		clientIDToIndex.delete(clientID);
 		freeIndices.push(index);
 	}
+	//! Forget what a client was sent, while keeping what it needs. The geometry counterpart of
+	//! Client.RearmAckedCommands, and it must be called wherever that is.
+	//!
+	//! A client that loses the stream throws its geometry cache away, but the WebSocket can
+	//! survive a WebRTC drop, in which case the same Client object is reused and every resource
+	//! is still marked sent and acknowledged. Nothing would ever be re-sent: node movements would
+	//! go out referencing nodes the client no longer holds, so the avatar would freeze, and
+	//! FollowerAnimator would stay `informed` and never repeat the animation state. Clearing the
+	//! sent and acknowledged bits — but not clientNeeds, which is the record of what to re-send,
+	//! nor the client's index — makes the next streaming tick send it all again.
+	//!
+	//! Harmless on a first connection, where there is nothing sent to forget.
+	static RearmClient(clientID) {
+		var index = clientIDToIndex.get(clientID);
+		if (index === undefined) return 0;
+		var rearmed = 0;
+		for (const [, res] of GeometryService.trackedResources) {
+			if (res.sent.get(index) || res.acknowledged.get(index))
+				rearmed++;
+			res.sent.set(index, false);
+			res.acknowledged.set(index, false);
+			res.sent_server_time_us.delete(clientID);
+		}
+		return rearmed;
+	}
 	//! Drop a tracked resource no client needs any more and which no longer
 	//! exists in the scene. Called from UnstreamNode, the only place where a
 	//! resource can become unwanted.
