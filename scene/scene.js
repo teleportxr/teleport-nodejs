@@ -197,24 +197,31 @@ class Scene {
 		const data = fs.readFileSync(filename, "utf8");
 		const j = JSON. parse(data);
 		console.log(j);
+		// Environment cubemaps. Each may be written either as a bare url string, or as
+		// {"url":..., "axes_standard":...} where the file's own frame needs declaring:
+		//
+		//   "background_texture": {"url": "/envCloudyCubemap.ktx2", "axes_standard": "engineering"}
+		//
+		// A bare string means "gl" — cubemaps are nearly always authored Y-up right-handed.
+		// That default is deliberately unlike the "meshes" block below, where an absent
+		// standard means "the same as the server's scene". The client reorients its sample
+		// directions from whatever is declared here; the file itself is never reprojected.
 		if(j.environment)
 		{
-			if(j.environment.background_texture)
+			const env=[
+				["background_texture","backgroundTexturePath"],
+				["diffuse_cubemap","diffuseCubemapPath"],
+				["specular_cubemap","specularCubemapPath"]
+			];
+			for(const [key,field] of env)
 			{
-				this.backgroundTexturePath=j.environment.background_texture;
-				// The environment background is a cubemap; flag it so each client is served the
-				// variant matching its axes standard (falls back to the base file if absent).
-				resources.GetOrAddCubemap(this.backgroundTexturePath);
-			}
-			if(j.environment.diffuse_cubemap)
-			{
-				this.diffuseCubemapPath=j.environment.diffuse_cubemap;
-				resources.GetOrAddCubemap(this.diffuseCubemapPath);
-			}
-			if(j.environment.specular_cubemap)
-			{
-				this.specularCubemapPath=j.environment.specular_cubemap;
-				resources.GetOrAddCubemap(this.specularCubemapPath);
+				const ref=resources.ParseTextureRef(j.environment[key]);
+				if(!ref)
+					continue;
+				this[field]=ref.url;
+				const uid=resources.GetOrAddTexture(ref.url,ref.axesStandard);
+				console.log("Environment "+key+" "+ref.url+" declared as axes standard "
+					+ref.axesStandard+", uid "+uid);
 			}
 		}
 		// Per-asset overrides for meshes, keyed by url. Only assets whose own frame differs

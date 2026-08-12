@@ -339,30 +339,14 @@ function GetResourceFromUid(uid) {
 }
 
 //! Get or add the texture url as a resource.
-function GetOrAddTexture(url) {
-	return GetOrAddResourceFromUrl(core.GeometryPayloadType.TexturePointer, url);
-}
-
-//! Get or add a cubemap texture, flagging the resource so it is served per-client in the
-//! variant matching the client's axes standard. Returns the resource uid.
-function GetOrAddCubemap(url) {
-	const uid = GetOrAddTexture(url);
-	const res = GetResourceFromUid(uid);
-	if (res)
-		res.isCubemap = true;
+//! axesStandard is optional; omit it for a texture with no orientation of its own, or for
+//! one authored in the server's own frame. It matters for cubemaps, whose faces are laid
+//! out in a particular frame — see Resource.axesStandard.
+function GetOrAddTexture(url, axesStandard) {
+	const uid = GetOrAddResourceFromUrl(core.GeometryPayloadType.TexturePointer, url);
+	if (axesStandard !== undefined)
+		SetResourceAxesStandard(uid, axesStandard);
 	return uid;
-}
-
-//! Insert an axes suffix before a cubemap URL's extension:
-//!   InsertCubemapAxesSuffix("/envCloudyCubemap.ktx2", "ogl") -> "/envCloudyCubemap_ogl.ktx2"
-//! Returns the url unchanged when the suffix is empty.
-function InsertCubemapAxesSuffix(url, suffix) {
-	if (!suffix || !url)
-		return url;
-	const dot = url.lastIndexOf(".");
-	if (dot < 0)
-		return url + "_" + suffix;
-	return url.substring(0, dot) + "_" + suffix + url.substring(dot);
 }
 
 //! Parse an axes standard written as a friendly name, as scene.json and the server config
@@ -389,6 +373,29 @@ function ParseAxesStandard(value) {
 			console.warn("Unknown axes standard '" + value + "'; treating as the server's own.");
 			return core.AxesStandard.NotInitialized;
 	}
+}
+
+//! Parse a texture reference as scene.json writes it, in either of two forms:
+//!
+//!   "/envCloudyCubemap.ktx2"
+//!   { "url": "/envCloudyCubemap.ktx2", "axes_standard": "engineering" }
+//!
+//! Returns {url, axesStandard}. A bare string means GlStyle, and so does an object with no
+//! axes_standard: cubemaps are nearly always authored Y-up right-handed, and a texture that
+//! has no orientation of its own does not care what the byte says. Note this differs from
+//! the "meshes" block, where an absent standard means "the same as the server's scene".
+function ParseTextureRef(value) {
+	if (value === undefined || value === null)
+		return null;
+	if (typeof value === "string")
+		return { url: value, axesStandard: core.AxesStandard.GlStyle };
+	const url = value.url;
+	if (typeof url !== "string" || !url) {
+		console.warn("Texture reference has no url: " + JSON.stringify(value));
+		return null;
+	}
+	const declared = value.axes_standard !== undefined ? value.axes_standard : value.axesStandard;
+	return { url, axesStandard: ParseAxesStandard(declared !== undefined ? declared : "gl") };
 }
 
 //! Record the axes standard an already-registered resource's asset is authored in.
@@ -449,14 +456,13 @@ module.exports = {
 	IsNativeAnimationPayloadEnabled,
 	GetOrAddAnimationPointer,
 	ParseAxesStandard,
+	ParseTextureRef,
 	SetResourceAxesStandard,
 	GetResourceFromUrl,
 	GetResourceUidFromUrl,
 	GetOrAddResourceUidFromUrl,
 	GetResourceFromUid,
 	GetOrAddTexture,
-	GetOrAddCubemap,
-	InsertCubemapAxesSuffix,
 	GetOrAddMesh,
 	AddFontAtlas,
 	AddTextCanvas,

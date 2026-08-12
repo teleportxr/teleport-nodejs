@@ -111,19 +111,42 @@ test('an undeclared asset encodes NotInitialized, meaning "same as the server"',
 	assert.strictEqual(core.AxesStandard.NotInitialized, 0);
 });
 
-test('a texture pointer carries a placeholder axes-standard byte', () => {
-	// A texture has no geometric frame, so the byte at the front of its body stays
-	// NotInitialized — a placeholder for future texture interpretation, not a statement
-	// about the asset. Cubemap orientation is handled by serving a per-axes variant instead.
-	const uid = resources.GetOrAddTexture('/tex-' + Math.random().toString(36).slice(2) + '.ktx2');
+test('a texture pointer carries a meaningful axes-standard byte', () => {
+	// A cubemap's faces are laid out in a particular frame, and the server never reprojects
+	// the file, so the byte at the front of the body says which frame that is. The client
+	// reorients its sample directions from it.
+	const uid = resources.GetOrAddTexture('/tex-' + Math.random().toString(36).slice(2) + '.ktx2',
+		core.AxesStandard.EngineeringStyle);
 	const res = resources.GetResourceFromUid(uid);
-	assert.strictEqual(res.carriesAxesStandard(), false);
+	assert.strictEqual(res.carriesAxesStandard(), true);
 	const buffer = new ArrayBuffer(res.encodedSize());
 	const written = resource_encoder.EncodeResource(res, buffer);
 	const dv = new DataView(buffer);
-	assert.strictEqual(dv.getUint8(17), core.AxesStandard.NotInitialized);
+	// Same position as for a mesh: size(8) type(1) uid(8), then the axes byte.
+	assert.strictEqual(dv.getUint8(8), core.GeometryPayloadType.TexturePointer);
+	assert.strictEqual(dv.getUint8(17), core.AxesStandard.EngineeringStyle);
 	// The body still ends with the url's last character.
 	assert.strictEqual(dv.getUint8(written - 1), '2'.charCodeAt(0));
+});
+
+test('a texture with no declared standard encodes NotInitialized', () => {
+	const uid = resources.GetOrAddTexture('/tex-' + Math.random().toString(36).slice(2) + '.ktx2');
+	const res = resources.GetResourceFromUid(uid);
+	const buffer = new ArrayBuffer(res.encodedSize());
+	resource_encoder.EncodeResource(res, buffer);
+	assert.strictEqual(new DataView(buffer).getUint8(17), core.AxesStandard.NotInitialized);
+});
+
+test('a texture reference parses as either a string or an object', () => {
+	const R = resources.ParseTextureRef;
+	// A bare string means gl — cubemaps are nearly always authored Y-up right-handed.
+	assert.deepStrictEqual(R('/env.ktx2'), { url: '/env.ktx2', axesStandard: core.AxesStandard.GlStyle });
+	// As does an object that declares no standard.
+	assert.deepStrictEqual(R({ url: '/env.ktx2' }), { url: '/env.ktx2', axesStandard: core.AxesStandard.GlStyle });
+	assert.deepStrictEqual(R({ url: '/env.ktx2', axes_standard: 'engineering' }),
+		{ url: '/env.ktx2', axesStandard: core.AxesStandard.EngineeringStyle });
+	assert.strictEqual(R(undefined), null);
+	assert.strictEqual(R({ axes_standard: 'gl' }), null);
 });
 
 test('axes standards can be named or given as wire values', () => {

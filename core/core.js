@@ -205,21 +205,6 @@ const AxesStandard =
 	UnityStyle: 64 | 4 | 2,		// 64 | YVertical | LeftHanded = 70
 };
 
-//! Map a client's axes standard to the filename suffix used for the matching cubemap
-//! variant. e.g. GlStyle -> "ogl", so /envCloudyCubemap.ktx2 -> /envCloudyCubemap_ogl.ktx2.
-//! Returns "" for an unknown/uninitialised standard, meaning "serve the original file".
-function AxesStandardToCubemapSuffix(axesStandard)
-{
-	switch (axesStandard)
-	{
-		case AxesStandard.GlStyle:			return "ogl";
-		case AxesStandard.EngineeringStyle:	return "eng";
-		case AxesStandard.UnrealStyle:		return "unreal";
-		case AxesStandard.UnityStyle:		return "unity";
-		default:							return "";
-	}
-}
-
 // ---- Axes-standard conversions for object transforms ----
 // Ported from the C++ server (libavstream common_maths.h ConvertPosition/Rotation/Scale), which
 // converts each node's transform from the server's axes standard to the client's during encoding.
@@ -613,7 +598,7 @@ function put_string(dataView, byteOffset, name) {
 
 module.exports = {
 	UID_SIZE, endian, SizeOfType, encodeIntoDataView, decodeFromDataView
-	, vec4, BackgroundMode, AxesStandard, AxesStandardToCubemapSuffix
+	, vec4, BackgroundMode, AxesStandard
 	, ConvertPosition, ConvertRotation, ConvertScale, ConvertPose
 	, GeometryPayloadType, DisplayInfo, RenderingFeatures, LightingMode, VideoCodec
 	, VideoConfig, AudioConfig, ClientDynamicLighting, encodeToUint8Array, decodeFromUint8Array
