@@ -291,6 +291,13 @@ class GeometryService {
 			meshComponent.data_uid,
 			diff
 		);
+		// A .glb/.vrm may reference its textures as external files rather than embedding
+		// them, and then the client has nothing to resolve those uris against unless we
+		// stream the textures too. They are refcounted like any other resource, so a texture
+		// two streamed meshes share is held until both let go.
+		for (const texture_uid of resources.GetMeshTextureUids(meshComponent.data_uid)) {
+			this.StreamOrUnstream(this.streamedTextures, texture_uid, diff);
+		}
 		//meshNode.skeletonID = node.skeletonNodeID;
 
 		//Get joint/bone IDs, if the skeletonID is not zero.

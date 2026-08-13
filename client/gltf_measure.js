@@ -88,6 +88,39 @@ function parseAsset(buf)
 	return { container: 'gltf', json, bin: null };
 }
 
+// The uris of images a glTF/GLB references as external files, in the order
+// they appear in `images`. An asset that embeds its images (bufferView) or
+// inlines them (data: uri) yields an empty array.
+//
+// These are the mesh's texture dependencies: a server streaming the mesh
+// must stream them too, or the client has nothing to resolve the uris
+// against. See scene.Load and resources.SetMeshTextures.
+//
+// Uris are returned exactly as authored — relative to the asset itself,
+// per the glTF spec — so the caller resolves them against the asset's own
+// url. Throws { code: 'malformed_asset' } on a bad container, as parseAsset
+// does; a caller scanning an arbitrary file should catch it.
+//
+// Note this is the same information measureAsset collects as `externalRefs`
+// in order to *refuse* an asset: a user-supplied avatar must be
+// self-contained (protocol plan §7), and that stays true. This function is
+// for server-owned scene assets, which may legitimately reference files
+// beside them.
+function externalImageUris(buf)
+{
+	const parsed = parseAsset(buf);
+	const images = Array.isArray(parsed.json.images) ? parsed.json.images : [];
+	const uris = [];
+	for (const im of images)
+	{
+		if (!im || typeof im.uri !== 'string' || !im.uri || im.uri.startsWith('data:'))
+			continue;
+		if (!uris.includes(im.uri))
+			uris.push(im.uri);
+	}
+	return uris;
+}
+
 // Canonical short format name for the policy `formats` list. A VRM is
 // reported as 'vrm', not 'glb' — a server that wants both must list
 // both (this is exactly the sniffFormat misbehaviour being fixed).
@@ -464,6 +497,7 @@ function checkRequirements(measure, req)
 }
 
 module.exports.parseAsset			= parseAsset;
+module.exports.externalImageUris	= externalImageUris;
 module.exports.detectFormat			= detectFormat;
 module.exports.imageDimensions		= imageDimensions;
 module.exports.decodeDataUri		= decodeDataUri;

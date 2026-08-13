@@ -4,6 +4,7 @@ var path = require('path');
 const nd = require('./node.js');
 const core = require('../core/core.js');
 const resources = require('./resources.js');
+const gltf = require('../client/gltf_measure.js');
 const { error } = require('console');
 const generateBMFont = require('msdf-bmfont-xml');
 
@@ -184,6 +185,49 @@ class Scene {
 			}
 		  )
 	}
+	//! The external texture urls a mesh asset references, found by reading the asset itself.
+	//! Used when scene.json does not list them explicitly.
+	//!
+	//! Returns [] — never throws — when the asset is not a local file we can read (a mesh url
+	//! may point at a CDN), is not glTF, or is malformed. A mesh that embeds its own textures
+	//! also yields [], which is the common case.
+	//!
+	//! Uris inside a glTF are relative to the asset, so they are resolved here against the
+	//! mesh's own url: "tex.png" under /props/chair.glb becomes /props/tex.png. A uri that is
+	//! already root-relative or absolute is passed through untouched, which is what the client
+	//! does with the same uri when it decodes the asset.
+	ScanMeshTextures(mesh_url) {
+		if(typeof mesh_url!=="string"||mesh_url.search("://")!=-1)
+			return [];
+		const ext=path.extname(mesh_url).toLowerCase();
+		if(ext!=".glb"&&ext!=".vrm"&&ext!=".gltf")
+			return [];
+		// The public path is what Express serves, so it is where the url resolves on disk.
+		const filename=path.join(this.publicPath,mesh_url);
+		var data;
+		try {
+			data=fs.readFileSync(filename);
+		} catch(e) {
+			// Not a file we host: nothing to scan, and nothing to say about it.
+			return [];
+		}
+		var uris;
+		try {
+			uris=gltf.externalImageUris(data);
+		} catch(e) {
+			console.warn("Could not scan "+mesh_url+" for external textures: "+e.message);
+			return [];
+		}
+		const base=path.posix.dirname(mesh_url);
+		return uris.map((uri)=>{
+			if(uri.search("://")!=-1||uri.startsWith("/"))
+				return uri;
+			// decodeURI, because a glTF uri is percent-encoded but our resource urls are not.
+			var relative=uri;
+			try { relative=decodeURI(uri); } catch(e) { /* leave it as authored */ }
+			return path.posix.normalize(path.posix.join(base,relative));
+		});
+	}
 	SetAssetsPath(pt){
 		this.assetsPath=pt;
 	}
@@ -233,6 +277,16 @@ class Scene {
 		//
 		// Declaring one here also registers it, so a mesh referenced only by a node created
 		// later still carries the right standard when it is streamed.
+		//
+		// An asset may reference its textures as external files rather than embedding them,
+		// in which case those textures are dependencies of the mesh and must be streamed with
+		// it. List them, and they are taken as authoritative:
+		//
+		//   "meshes": { "/props/chair.glb": { "textures": ["/props/chair_base.png"] } }
+		//
+		// Omit the list and the asset is scanned for them instead (see ScanMeshTextures), so
+		// the common case needs no bookkeeping. Either way the texture urls are what the
+		// client resolves the asset's own image uris against.
 		if(j.meshes)
 		{
 			for (let [url, sub_obj] of Object.entries(j.meshes)) {
@@ -241,6 +295,13 @@ class Scene {
 				if(axes!==undefined)
 					console.log("Mesh "+url+" declared as axes standard '"+axes+"' ("
 						+resources.ParseAxesStandard(axes)+"), uid "+uid);
+				const declared=sub_obj?sub_obj.textures:undefined;
+				const texture_uids=Array.isArray(declared)
+					?resources.SetMeshTextures(uid,declared)
+					:resources.SetMeshTextures(uid,this.ScanMeshTextures(url));
+				if(texture_uids.length)
+					console.log("Mesh "+url+" depends on "+texture_uids.length+" external texture(s): "
+						+texture_uids.join(", "));
 			}
 		}
 		if(j.font_atlases)

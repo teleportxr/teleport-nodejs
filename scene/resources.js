@@ -28,6 +28,10 @@ class Resource {
 		//! *contents* are never converted here, so the client reorients its sample directions
 		//! from this standard. Environment cubemaps declared in scene.json default to GlStyle.
 		this.axesStandard = core.AxesStandard.NotInitialized;
+		//! Uids of the textures this resource depends on, for a MeshPointer whose asset
+		//! references its textures as external files rather than embedding them. A client
+		//! streaming this mesh must be streamed these too; see SetMeshTextures.
+		this.textureUids = [];
 	}
 	//! Buffer to allocate before encoding. Includes the 8-byte payload-size prefix that
 	//! resource_encoder.EncodeResource writes ahead of the body, as FontAtlas.encodedSize
@@ -417,6 +421,51 @@ function GetOrAddMesh(url, axesStandard) {
 	return uid;
 }
 
+//! Record the textures a mesh asset references as external files, so that streaming the mesh
+//! to a client also streams the textures it needs. A .glb/.vrm may either embed its images or
+//! reference them by uri; the second form leaves the texture a separate resource, and nothing
+//! else in the scene tells us the mesh depends on it.
+//!
+//! Each entry is a url, written either bare or as {url, axes_standard} — the object form is
+//! there for the rare texture that has a frame of its own (a cubemap). A bare string registers
+//! no axes standard at all rather than defaulting to GlStyle as ParseTextureRef does: an
+//! ordinary 2D image has no orientation to declare, and NotInitialized is what the client
+//! reads as "the same as the server's scene".
+//!
+//! Replaces any previously recorded list for this mesh. Returns the uids recorded.
+function SetMeshTextures(meshUid, textures) {
+	const mesh = GetResourceFromUid(meshUid);
+	if (!mesh) {
+		console.error("SetMeshTextures: no resource for uid " + meshUid);
+		return [];
+	}
+	const uids = [];
+	for (const entry of textures || []) {
+		let url = entry;
+		let axesStandard;
+		if (entry && typeof entry === "object") {
+			url = entry.url;
+			axesStandard = entry.axes_standard !== undefined ? entry.axes_standard : entry.axesStandard;
+		}
+		if (typeof url !== "string" || !url) {
+			console.warn("Mesh texture reference has no url: " + JSON.stringify(entry));
+			continue;
+		}
+		const uid = GetOrAddTexture(url, axesStandard);
+		if (uid && !uids.includes(uid))
+			uids.push(uid);
+	}
+	mesh.textureUids = uids;
+	return uids;
+}
+
+//! The textures a mesh asset references as external files; empty for an asset that embeds its
+//! own, which is the common case. See SetMeshTextures.
+function GetMeshTextureUids(meshUid) {
+	const mesh = GetResourceFromUid(meshUid);
+	return mesh && mesh.textureUids ? mesh.textureUids : [];
+}
+
 //! Get or add an animation clip url as a resource. The client fetches the url and decodes
 //! the body as an Animation, so it must end in an extension the client dispatches on:
 //! `.vrma`, `.glb`, `.vrm` (glTF binary) or `.gltf` (glTF text).
@@ -464,6 +513,8 @@ module.exports = {
 	GetResourceFromUid,
 	GetOrAddTexture,
 	GetOrAddMesh,
+	SetMeshTextures,
+	GetMeshTextureUids,
 	AddFontAtlas,
 	AddTextCanvas,
 	AddTypedResource,
