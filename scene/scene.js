@@ -17,9 +17,16 @@ class Scene {
 		this.assetsPath="assets";
 		this.publicPath="http_resources";
 		// The axes standard the scene (node poses, cubemaps) is authored in. Node transforms are
-		// converted from this to each client's axes standard when streamed. Z-up Engineering by
-		// default, matching the C++ client's native frame and the *_eng cubemap source.
-		this.serverAxesStandard=core.AxesStandard.EngineeringStyle;
+		// converted from this to each client's axes standard when streamed, so this is an
+		// authoring choice, not a wire constraint — every client is served in its own frame
+		// whatever this says.
+		//
+		// GlStyle by default: Y-up right-handed is the frame every glTF-family asset this
+		// server streams is already in, and the one a Three.js-side consumer thinks in, so it
+		// is the setting that needs no conversion anywhere in the common case. Scenes authored
+		// Z-up must say so, with "axes_standard": "engineering" at the top level of their
+		// scene json — see Load.
+		this.serverAxesStandard=core.AxesStandard.GlStyle;
 	}
 	GetOrCreateNode(uid) {
 		if (!this.nodes.has(uid)) {
@@ -234,6 +241,26 @@ class Scene {
 	SetPublicPath(pp){
 		this.publicPath=pp;
 	}
+	//! Set the axes standard this scene is authored in, for a host that builds its scene
+	//! programmatically rather than loading json. Accepts anything ParseAxesStandard does
+	//! ("gl", "engineering", "unity", "unreal", or a core.AxesStandard value).
+	//!
+	//! Refuses anything that is not one of the four complete standards. NotInitialized in
+	//! particular means "unknown" on the wire, and setting it here would switch off conversion
+	//! altogether for every client (see Client.SendNodeMovements and
+	//! Client.ConvertPoseFromClientAxes, both of which pass poses through untouched when
+	//! either side is NotInitialized). Returns true if the standard was changed.
+	SetAxesStandard(axesStandard){
+		const parsed=resources.ParseAxesStandard(axesStandard);
+		if(!core.IsCompleteAxesStandard(parsed))
+		{
+			console.warn("Scene.SetAxesStandard: unrecognised axes standard '"+axesStandard
+				+"'; keeping "+this.serverAxesStandard+".");
+			return false;
+		}
+		this.serverAxesStandard=parsed;
+		return true;
+	}
 	//! Load an initial scene state from a json file.
 	Load(filename) {
 		filename=path.join(this.assetsPath,filename);
@@ -241,6 +268,21 @@ class Scene {
 		const data = fs.readFileSync(filename, "utf8");
 		const j = JSON. parse(data);
 		console.log(j);
+		// The frame this scene's own node poses are authored in, as a top-level key:
+		//
+		//   "axes_standard": "engineering"
+		//
+		// Absent means GlStyle, the constructor default — Y-up right-handed, matching the
+		// glTF-family assets the scene references. A scene whose poses are Z-up must declare
+		// it, or every node in it arrives on its side. This is distinct from the per-asset
+		// declarations in "environment" and "meshes" below, which describe an individual
+		// file's frame rather than the scene's.
+		if(j.axes_standard!==undefined||j.axesStandard!==undefined)
+		{
+			const declared=j.axes_standard!==undefined?j.axes_standard:j.axesStandard;
+			if(this.SetAxesStandard(declared))
+				console.log("Scene authored in axes standard '"+declared+"' ("+this.serverAxesStandard+").");
+		}
 		// Environment cubemaps. Each may be written either as a bare url string, or as
 		// {"url":..., "axes_standard":...} where the file's own frame needs declaring:
 		//

@@ -402,6 +402,28 @@ function ParseTextureRef(value) {
 	return { url, axesStandard: ParseAxesStandard(declared !== undefined ? declared : "gl") };
 }
 
+//! The axes standard implied by an asset url's file extension, or NotInitialized where the
+//! extension says nothing.
+//!
+//! Only the glTF family is inferable, and it is inferable absolutely: .glb, .gltf, .vrm and
+//! .vrma are Y-up right-handed by specification, whatever frame the scene around them uses.
+//! That makes the guess safe in the one place it matters — a mesh url that arrives at runtime
+//! rather than through scene.json's "meshes" block, e.g. a client-supplied avatar, which would
+//! otherwise inherit the server's own standard and be laid on its side in a Z-up scene.
+//!
+//! An explicit declaration always wins over this; see Node.setMeshComponent.
+function AxesStandardForAssetUrl(url) {
+	if (typeof url !== "string")
+		return core.AxesStandard.NotInitialized;
+	// Strip any query string or fragment before looking at the extension: a CDN url may
+	// carry either, and ".glb?v=2" must still read as glTF.
+	const path = url.split(/[?#]/)[0].toLowerCase();
+	if (path.endsWith(".glb") || path.endsWith(".gltf")
+		|| path.endsWith(".vrm") || path.endsWith(".vrma"))
+		return core.AxesStandard.GlStyle;
+	return core.AxesStandard.NotInitialized;
+}
+
 //! Record the axes standard an already-registered resource's asset is authored in.
 //! Only needed where the asset disagrees with the server's own scene; see Resource.axesStandard.
 function SetResourceAxesStandard(uid, axesStandard) {
@@ -506,6 +528,7 @@ module.exports = {
 	GetOrAddAnimationPointer,
 	ParseAxesStandard,
 	ParseTextureRef,
+	AxesStandardForAssetUrl,
 	SetResourceAxesStandard,
 	GetResourceFromUrl,
 	GetResourceUidFromUrl,

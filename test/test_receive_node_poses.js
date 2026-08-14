@@ -143,6 +143,33 @@ test('converts inbound poses from the client axes standard to the server\'s', ()
 	assert.strictEqual(p.z, 1, 'GL +Y (up) should convert to Engineering +Z (up)');
 });
 
+test('converts inbound poses for a GL server and an Engineering client', () => {
+	// The mirror of the case above, and the one a GL-authored scene actually runs: the server
+	// is now Y-up and it is the C++/headless client, which declares EngineeringStyle, that
+	// needs converting. Engineering up is +Z, so this must land on GL's +Y.
+	const c = makeStubClient(core.AxesStandard.GlStyle);
+	c.clientAxesStandard = core.AxesStandard.EngineeringStyle;
+	c.ReceiveNodePoses(makeNodePosesBuffer({
+		orientation: { x: 0, y: 0, z: 0, w: 1 },
+		position: { x: 0, y: 0, z: 1 },
+	}));
+	const p = c.currentHeadPose.position;
+	assert.ok(Math.abs(p.x) < 1e-9, 'x should be zero, got ' + p.x);
+	assert.strictEqual(p.y, 1, 'Engineering +Z (up) should convert to GL +Y (up)');
+	assert.ok(Math.abs(p.z) < 1e-9, 'z should be zero, got ' + p.z);
+});
+
+test('leaves inbound poses alone when client and server share a standard', () => {
+	// The common case once the server is GL: the web client declares GlStyle too, so the
+	// whole conversion path must be a no-op rather than a permutation that happens to cancel.
+	const c = makeStubClient(core.AxesStandard.GlStyle);
+	c.clientAxesStandard = core.AxesStandard.GlStyle;
+	c.ReceiveNodePoses(makeNodePosesBuffer({
+		orientation: { x: 0, y: 0, z: 0, w: 1 }, position: { x: 1, y: 2, z: 3 },
+	}));
+	assert.deepStrictEqual(c.currentHeadPose.position, { x: 1, y: 2, z: 3 });
+});
+
 test('retains the previous head pose sample', () => {
 	const c = makeStubClient();
 	c.ReceiveNodePoses(makeNodePosesBuffer(IDENTITY));

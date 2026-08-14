@@ -119,6 +119,34 @@ test('converts the pose into the client axes standard', () => {
 	assert.ok(Math.abs(dv.getFloat32(9 + 17 + 8, true)) < 1e-6, 'z');
 });
 
+test('converts the pose for a GL server and an Engineering client', () => {
+	// The mirror of the case above, and the outbound half of what a GL-authored scene does
+	// when the C++/headless client connects: server Y-up, client Z-up.
+	const c = makeStubClient();
+	c.scene = { serverAxesStandard: core.AxesStandard.GlStyle };
+	c.clientAxesStandard = core.AxesStandard.EngineeringStyle;
+	c.QueueNodeMovement(NODE_A, { ...POSE, position: { x: 0, y: 1, z: 0 } });
+	c.SendNodeMovements(0);
+	const dv = new DataView(c.sent[0].buffer);
+	// GL +Y (up) must arrive as Engineering +Z (up).
+	assert.ok(Math.abs(dv.getFloat32(9 + 17, true)) < 1e-6, 'x');
+	assert.ok(Math.abs(dv.getFloat32(9 + 17 + 4, true)) < 1e-6, 'y');
+	assert.strictEqual(dv.getFloat32(9 + 17 + 8, true), 1, 'z should carry the up component');
+});
+
+test('sends the pose untouched when client and server share a standard', () => {
+	// The common case for a GL server: the web client declares GlStyle too.
+	const c = makeStubClient();
+	c.scene = { serverAxesStandard: core.AxesStandard.GlStyle };
+	c.clientAxesStandard = core.AxesStandard.GlStyle;
+	c.QueueNodeMovement(NODE_A, { ...POSE, position: { x: 1, y: 2, z: 3 } });
+	c.SendNodeMovements(0);
+	const dv = new DataView(c.sent[0].buffer);
+	assert.strictEqual(dv.getFloat32(9 + 17, true), 1, 'x');
+	assert.strictEqual(dv.getFloat32(9 + 17 + 4, true), 2, 'y');
+	assert.strictEqual(dv.getFloat32(9 + 17 + 8, true), 3, 'z');
+});
+
 test('UpdateMotion runs controllers then flushes what they queued', () => {
 	const c = makeStubClient();
 	let sawDt = null;

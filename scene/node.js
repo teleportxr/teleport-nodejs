@@ -325,7 +325,23 @@ class Node {
 		return sz;
 	}
 	setMeshComponent(mesh_url) {
-		resources.GetOrAddMesh(mesh_url);
+		// Register the mesh, inferring its axes standard from the file extension where we can.
+		// Without this the resource keeps NotInitialized, which the client reads as "the same
+		// as the server's scene" — wrong for any glTF-family asset in a scene that is not
+		// itself Y-up. This is the path a mesh takes when it does not come from scene.json's
+		// "meshes" block, notably a client-supplied avatar url (see client/avatar_importer.js).
+		//
+		// An explicit declaration is authoritative and must survive: scene.json is loaded
+		// before nodes reference their meshes, so a url listed there with an axes standard
+		// already has one by the time we get here.
+		const mesh_uid=resources.GetOrAddMesh(mesh_url);
+		const mesh_resource=resources.GetResourceFromUid(mesh_uid);
+		if(mesh_resource&&mesh_resource.axesStandard===core.AxesStandard.NotInitialized)
+		{
+			const inferred=resources.AxesStandardForAssetUrl(mesh_url);
+			if(inferred!==core.AxesStandard.NotInitialized)
+				resources.SetResourceAxesStandard(mesh_uid,inferred);
+		}
 		this.components.forEach((component) => {
 			if (component.getType() == NodeDataType.Mesh) {
 				component.meshUrl = mesh_url;

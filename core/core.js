@@ -205,6 +205,22 @@ const AxesStandard =
 	UnityStyle: 64 | 4 | 2,		// 64 | YVertical | LeftHanded = 70
 };
 
+//! The four complete standards, as opposed to the component bits. A value outside this set
+//! is not something either end of the wire can convert to or from, so anywhere a standard is
+//! being *chosen* rather than defaulted — the scene's own, say — check it against this.
+const COMPLETE_AXES_STANDARDS =
+[
+	AxesStandard.EngineeringStyle, AxesStandard.GlStyle,
+	AxesStandard.UnrealStyle, AxesStandard.UnityStyle
+];
+
+//! Is this a complete axes standard? False for NotInitialized, for a bare component bit, and
+//! for any value that is not one of the four.
+function IsCompleteAxesStandard(value)
+{
+	return COMPLETE_AXES_STANDARDS.indexOf(value)>=0;
+}
+
 // ---- Axes-standard conversions for object transforms ----
 // Ported from the C++ server (libavstream common_maths.h ConvertPosition/Rotation/Scale), which
 // converts each node's transform from the server's axes standard to the client's during encoding.
@@ -297,6 +313,7 @@ function ConvertScale(from, to, s)
 		if (to === A.UnityStyle)       return { x: s.x, y: s.y, z: s.z };
 		if (to === A.EngineeringStyle) return { x: s.x, y: s.z, z: s.y };	// added
 	}
+	console.warn("ConvertScale: unsupported axes "+from+"->"+to+"; leaving unchanged");
 	return { x: s.x, y: s.y, z: s.z };
 }
 
@@ -598,7 +615,7 @@ function put_string(dataView, byteOffset, name) {
 
 module.exports = {
 	UID_SIZE, endian, SizeOfType, encodeIntoDataView, decodeFromDataView
-	, vec4, BackgroundMode, AxesStandard
+	, vec4, BackgroundMode, AxesStandard, COMPLETE_AXES_STANDARDS, IsCompleteAxesStandard
 	, ConvertPosition, ConvertRotation, ConvertScale, ConvertPose
 	, GeometryPayloadType, DisplayInfo, RenderingFeatures, LightingMode, VideoCodec
 	, VideoConfig, AudioConfig, ClientDynamicLighting, encodeToUint8Array, decodeFromUint8Array

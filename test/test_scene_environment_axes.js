@@ -67,3 +67,51 @@ test('a malformed environment entry is skipped rather than stored', () => {
 	const scene = loadScene({ environment: { background_texture: { axes_standard: 'gl' } } });
 	assert.strictEqual(scene.backgroundTexturePath, '');
 });
+
+// ---- The scene's own axes standard ----
+// Distinct from the per-asset declarations above: this one says what frame the scene's node
+// poses are written in, and it is what SetupCommand.axesStandard reports to every client.
+
+test('a scene defaults to GlStyle', () => {
+	// Y-up right-handed, matching the glTF-family assets a scene references and the frame a
+	// Three.js-side consumer thinks in. A scene authored Z-up has to say so.
+	assert.strictEqual(new Scene().serverAxesStandard, core.AxesStandard.GlStyle);
+	assert.strictEqual(loadScene({}).serverAxesStandard, core.AxesStandard.GlStyle);
+});
+
+test('a scene declares its own axes standard with a top-level key', () => {
+	assert.strictEqual(loadScene({ axes_standard: 'engineering' }).serverAxesStandard,
+		core.AxesStandard.EngineeringStyle);
+	// camelCase is accepted too, as the environment and meshes blocks accept both.
+	assert.strictEqual(loadScene({ axesStandard: 'unity' }).serverAxesStandard,
+		core.AxesStandard.UnityStyle);
+	// A raw wire value is allowed where that is clearer than a name.
+	assert.strictEqual(loadScene({ axes_standard: core.AxesStandard.UnrealStyle }).serverAxesStandard,
+		core.AxesStandard.UnrealStyle);
+});
+
+test('an unusable scene axes standard is refused, leaving the default intact', () => {
+	// The dangerous outcome is not a wrong standard but NotInitialized: that value switches
+	// conversion off entirely for every client (Client.SendNodeMovements and
+	// ConvertPoseFromClientAxes both pass poses straight through when either side is 0), so
+	// every pose would silently arrive in the wrong frame rather than failing loudly.
+	for (const bad of ['sideways', '', 0, core.AxesStandard.NotInitialized,
+		core.AxesStandard.YVertical, 17]) {
+		const scene = loadScene({ axes_standard: bad });
+		assert.strictEqual(scene.serverAxesStandard, core.AxesStandard.GlStyle,
+			'axes_standard ' + JSON.stringify(bad) + ' should have been refused');
+	}
+});
+
+test('SetAxesStandard accepts the four standards and refuses anything else', () => {
+	const scene = new Scene();
+	assert.strictEqual(scene.SetAxesStandard('engineering'), true);
+	assert.strictEqual(scene.serverAxesStandard, core.AxesStandard.EngineeringStyle);
+	assert.strictEqual(scene.SetAxesStandard(core.AxesStandard.GlStyle), true);
+	assert.strictEqual(scene.serverAxesStandard, core.AxesStandard.GlStyle);
+
+	assert.strictEqual(scene.SetAxesStandard('nonsense'), false);
+	assert.strictEqual(scene.SetAxesStandard(core.AxesStandard.NotInitialized), false);
+	// Refused calls must not have moved it.
+	assert.strictEqual(scene.serverAxesStandard, core.AxesStandard.GlStyle);
+});
